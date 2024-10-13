@@ -57,8 +57,6 @@ jupyter = "^1.0.0"
 notebook = "^7.1.2"
 
 # 딥러닝 및 머신러닝 관련 패키지
-torch = "^2.2.2"
-torchvision = "^0.17.2"
 faiss-cpu = "^1.8.0"
 open-clip-torch = "^2.24.0"
 
@@ -89,6 +87,14 @@ grandalf = "^0.8"
 rouge-score = "^0.1.2"
 langchain-ollama = "^0.2.0"
 mypy = "^1.11.2"
+torch = {version = "^2.4.1+cu124", source = "pytorch"}
+torchvision = {version = "^0.19.1+cu124", source = "pytorch"}
+torchaudio = {version = "^2.4.1+cu124", source = "pytorch"}
+
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu124"
+priority = "explicit"
 
 [build-system]
 requires = ["poetry-core"]
