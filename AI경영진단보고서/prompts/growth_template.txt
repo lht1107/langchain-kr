@@ -1,0 +1,48 @@
+# Financial Data Analysis Prompt
+
+Provide a detailed and objective analysis of the financial data, focusing on growth trends, patterns, and any significant deviations.
+
+## Financial Performance Overview
+
+The financial performance as of **{latest_year_month}** is outlined below, incorporating annual and recent monthly data:
+
+- **Annual Revenue Data {annual_revenue}**  
+  Contains annual figures for key metrics, including **‘revenue’** and **‘revenue growth rate’**. The tag **‘(E)’** indicates estimated figures for the current year. Compare these values across years to identify significant fluctuations. Translate all findings into Korean, ensuring units are clearly stated as **millions of won**.
+
+- **Annual Asset Data {annual_assets}**  
+  Includes total assets and asset-related growth rates, such as **‘total asset growth rate’** and **industry-average asset growth rate**. Focus on any significant changes, especially in current year estimates. Present all findings in Korean, with units indicated as **percentage (%)**.
+
+- **Monthly Revenue Data {monthly_revenue}**  
+  Recent monthly data over the past 12 months captures short-term trends in **monthly revenue** and **revenue for the same month last year**. Highlight any notable trends or consistent patterns, clearly distinguishing **level metrics** (e.g., revenue in **millions of won**).
+
+- **Monthly Growth Data {monthly_growth}**  
+  Monthly growth data over the past 12 months, including **monthly revenue growth rate** and **cumulative revenue growth rate**. Focus on notable fluctuations and trends, clearly identifying **rate metrics** (e.g., growth rates in **percentage (%)**).
+
+## Analysis Steps
+
+1. **Identify Key Changes and Trends**  
+   - Compare annual revenue and asset data with growth rate data to identify significant shifts. Emphasize critical values and fluctuations.
+   - Summarize short-term trends using monthly data, highlighting key changes in revenue and growth rates. Ensure all findings are translated into Korean.
+
+2. **Summarize Analysis in Three Sentences**  
+   - Provide a concise summary in Korean, capturing the most critical insights with units specified as **millions of won** or **percentage (%)**.
+
+## Output Requirements
+
+- Deliver a **three-sentence** summary that covers the most critical insights.
+- The summary must be in **Korean**, using clear, connected language.
+- Maintain a smooth narrative without bullet points or lists.
+- Specify metrics and years explicitly, using units of **millions of won** or **percentage (%)**.
+- Emphasize objectivity, avoiding speculative extrapolation.
+- Use precise data points to underscore key changes or patterns.
+
+## Key Mapping Table
+
+- **매출액 (revenue)**: Represents monthly or annual revenue. The unit is **millions of won**.
+- **전년동월 매출액 (year_over_year_revenue)**: Revenue from the same month in the previous year. The unit is **millions of won**.
+- **매출액증가율 (revenue_growth_rate)**: Year-over-year revenue growth rate for a specific month. The unit is **percentage (%)**.
+- **총자산 (total_assets)**: Represents annual total assets. The unit is **millions of won**.
+- **총자산증가율 (total_asset_growth_rate)**: Year-over-year total asset growth rate. The unit is **percentage (%)**.
+- **업종평균 매출액증가율 (industry_average_revenue_growth_rate)**: Average revenue growth rate across the industry. The unit is **percentage (%)**.
+- **업종평균 총자산증가율 (industry_average_asset_growth_rate)**: Average total asset growth rate across the industry. The unit is **percentage (%)**.
+- **누적 매출액증가율 (cumulative_revenue_growth_rate)**: Growth rate of cumulative revenue over the previous year. The unit is **percentage (%)**.

@@ -1,0 +1,41 @@
+Provide an objective analysis of the given financial data, focusing on noticeable growth patterns, trends, and any significant changes.
+
+The growth performance for the past few years and recent trends as of {latest_year_month} are summarized in the data provided:
+
+- **year_level_data** {year_level_data}: Contains annual data, including key metrics like 'total assets' and 'revenue' for each year.
+- **year_rate_data** {year_rate_data}: Includes annual growth rate data for metrics such as 'total asset growth rate' and 'revenue growth rate'.
+- **recent_data** {recent_data}: Presents monthly data for the last 12 months, highlighting trends and performance metrics over recent months.
+
+# Steps
+
+1. Analyze each section of the data:
+   - Identify key metrics in the year_level_data and their annual values.
+   - Examine growth rates in year_rate_data and highlight significant trends or anomalies.
+   - Review recent_data for patterns over the last 12 months.
+2. Focus on any noticeable changes, standout values, or specific time periods.
+3. Translate your findings into Korean, ensuring the analysis remains objective.
+
+# Output Format
+
+- Summarize the analysis results in a single, cohesive paragraph of 3-4 sentences.
+- Analysis should be written in Korean.
+- Use natural, flowing language to connect ideas and observations.
+- Avoid bullet points or numbered lists.
+- Maintain objectivity and avoid any subjective opinions or suggestions.
+- Highlight the most significant changes or trends, including specific figures and time frames.
+- Ensure smooth transitions between different data points and observations.
+
+# Examples
+
+**Korean Analysis (Example Translation)**
+- "2022년의 연간 데이터에서 총자산이 크게 증가하여 15%를 기록했습니다. 이는 2021년의 5% 증가에 비해 상당한 성장률 변화를 나타냅니다. 이러한 추세는 2023년에도 지속되어 매출액이 10% 이상 증가했으며, 최근 12개월 동안의 월별 데이터에서도 꾸준한 성장세가 관찰되었습니다."
+
+# Examples
+
+**Korean Analysis (Example Translation)**
+- "2024년 예상 연간 데이터에 따르면, 총자산은 30,297로, 2023년의 29,873에 비해 소폭 증가할 것으로 보이며, 매출액은 10,546.67에서 10,794.67로 증가할 것으로 예상됩니다. 매출액 증가율 또한 15.8%에서 14.13%로 다소 둔화될 전망이지만 여전히 높은 성장세를 유지하고 있습니다. 최근 12개월의 월별 데이터에서는 2024년 1월 이후 총자산의 변동이 있었고, 5월에는 매출액 증가율이 13.72%로 높아지는 등 전반적으로 매출액 성장세가 유지되고 있는 모습입니다."
+
+# Notes
+
+- Make sure to focus fully on the data provided, presenting an objective analysis without extrapolating beyond the given information.
+- Highlight only the most significant patterns and changes, detailing the time frames and values precisely.
