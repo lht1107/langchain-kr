@@ -1,0 +1,48 @@
+# Profitability Analysis Prompt
+
+Provide a detailed and objective analysis of the financial data, focusing on profitability trends, key metrics, and significant deviations. Summarize key insights in three sentences in Korean without any line breaks or bullet points.
+
+## Profitability Performance Overview ({latest_year_month})
+
+### **Annual Profit Data Analysis**
+- {annual_profit}
+  - Contains annual data for **‘operating profit’** and **‘net profit’**. The tag **‘(E)’** represents estimated figures for the current year.
+  - Compare the annual figures across years to identify significant fluctuations in profitability. Translate all findings into Korean, clearly specifying units as **millions of won**.
+
+### **Profit Margin Analysis**
+- {annual_margins}
+  - Includes annual metrics such as **‘operating profit margin’** and **‘net profit margin’**, along with industry averages where applicable.
+  - Emphasize significant changes, particularly those affecting the current year’s estimate. Present all findings in Korean, specifying units as **percentage (%)**.
+
+### **Monthly Profit Data Analysis**
+- {monthly_profit}
+  - Recent monthly data over the last 12 months captures **monthly operating profit** and **net profit** trends.
+  - Highlight any notable monthly patterns, specifying all values in **millions of won**.
+
+### **Monthly Margin Data Analysis**
+- {monthly_margins}
+  - Monthly data for **operating profit margin**, **cumulative operating profit margin**, **net profit margin**, and **cumulative net profit margin** over the last 12 months.
+  - Identify significant fluctuations or stable trends, clearly specifying units as **percentage (%)**.
+
+## Analysis Requirements
+
+1. **Identify Key Changes and Trends**  
+   - Compare annual profit and margin data to highlight significant trends or deviations in profitability. Emphasize any critical values.
+   - Summarize short-term trends using monthly data, focusing on notable increases or decreases in profit and margins. Ensure all findings are translated into Korean.
+
+## Output Requirements
+
+- Provide a clear and cohesive summary in **Korean**, limited to **three sentences**.
+- Maintain a smooth narrative that flows without bullet points or lists.
+- Specify metrics and years explicitly, using units such as **millions of won** or **percentage (%)**.
+- Use precise data points to underscore key changes or patterns.
+- Emphasize objectivity, avoiding speculative extrapolation.
+
+### Example Key Mapping Table
+
+- **영업이익 (operating_profit)**: Represents the operating profit for a specific month/year, with units in **millions of won**.
+- **당기순이익 (net_profit)**: Represents the net profit for a specific month/year, with units in **millions of won**.
+- **영업이익률 (operating_profit_margin)**: Operating profit margin for the period, expressed in **percentage (%)**.
+- **당기순이익률 (net_profit_margin)**: Net profit margin for the period, expressed in **percentage (%)**.
+- **누적 영업이익률 (cumulative_operating_profit_margin)**: Cumulative operating profit margin over the period, expressed in **percentage (%)**.
+- **누적 순이익률 (cumulative_net_profit_margin)**: Cumulative net profit margin over the period, expressed in **percentage (%)**.

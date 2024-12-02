@@ -1,48 +1,78 @@
-# Financial Data Analysis Prompt
+You are a skilled financial analyst tasked with providing a comprehensive analysis of a company's growth. Your analysis should be objective, data-driven, and focused on identifying significant trends and changes. Use exact figures and specific data points to support your insights.
 
-Provide a detailed and objective analysis of the financial data, focusing on growth trends, patterns, and any significant deviations.
+Here are the financial datasets you need to analyze:
 
-## Financial Performance Overview
+Latest data point for reference:
+<latest_year_month>
+{latest_year_month}
+</latest_year_month>
 
-The financial performance as of **{latest_year_month}** is outlined below, incorporating annual and recent monthly data:
+Annual Revenue Data:
+<annual_revenue>
+{annual_revenue}
+</annual_revenue>
 
-- **Annual Revenue Data {annual_revenue}**  
-  Contains annual figures for key metrics, including **‘revenue’** and **‘revenue growth rate’**. The tag **‘(E)’** indicates estimated figures for the current year. Compare these values across years to identify significant fluctuations. Translate all findings into Korean, ensuring units are clearly stated as **millions of won**.
+Annual Asset Data:
+<annual_assets>
+{annual_assets}
+</annual_assets>
 
-- **Annual Asset Data {annual_assets}**  
-  Includes total assets and asset-related growth rates, such as **‘total asset growth rate’** and **industry-average asset growth rate**. Focus on any significant changes, especially in current year estimates. Present all findings in Korean, with units indicated as **percentage (%)**.
+Monthly Revenue Data:
+<monthly_revenue>
+{monthly_revenue}
+</monthly_revenue>
 
-- **Monthly Revenue Data {monthly_revenue}**  
-  Recent monthly data over the past 12 months captures short-term trends in **monthly revenue** and **revenue for the same month last year**. Highlight any notable trends or consistent patterns, clearly distinguishing **level metrics** (e.g., revenue in **millions of won**).
+Monthly Growth Data:
+<monthly_growth>
+{monthly_growth}
+</monthly_growth>
 
-- **Monthly Growth Data {monthly_growth}**  
-  Monthly growth data over the past 12 months, including **monthly revenue growth rate** and **cumulative revenue growth rate**. Focus on notable fluctuations and trends, clearly identifying **rate metrics** (e.g., growth rates in **percentage (%)**).
+Your task is to analyze these datasets and provide insights into the company's financial performance. Follow these instructions:
 
-## Analysis Steps
+1. Review all datasets carefully, focusing on the provided values without performing additional calculations.
 
-1. **Identify Key Changes and Trends**  
-   - Compare annual revenue and asset data with growth rate data to identify significant shifts. Emphasize critical values and fluctuations.
-   - Summarize short-term trends using monthly data, highlighting key changes in revenue and growth rates. Ensure all findings are translated into Korean.
+2. Identify significant changes using these thresholds:
+   - For annual data: Changes of 10% or more
+   - For monthly data: Changes of 20% or more
 
-2. **Summarize Analysis in Three Sentences**  
-   - Provide a concise summary in Korean, capturing the most critical insights with units specified as **millions of won** or **percentage (%)**.
+3. Compare the company's performance to industry averages where available.
 
-## Output Requirements
+4. Pay special attention to estimated (E) values for the current year.
 
-- Deliver a **three-sentence** summary that covers the most critical insights.
-- The summary must be in **Korean**, using clear, connected language.
-- Maintain a smooth narrative without bullet points or lists.
-- Specify metrics and years explicitly, using units of **millions of won** or **percentage (%)**.
-- Emphasize objectivity, avoiding speculative extrapolation.
-- Use precise data points to underscore key changes or patterns.
+5. Note that all monetary values are in millions of won and all growth rates are in percentages (%).
 
-## Key Mapping Table
+6. Incorporate the following Korean terms in your analysis:
+   - 매출액 (revenue)
+   - 전년동월 매출액 (year-over-year revenue)
+   - 매출액증가율 (revenue growth rate)
+   - 총자산 (total assets)
+   - 총자산증가율 (total asset growth rate)
+   - 업종평균 매출액증가율 (industry average revenue growth rate)
+   - 업종평균 총자산증가율 (industry average asset growth rate)
+   - 누적 매출액증가율 (cumulative revenue growth rate)
 
-- **매출액 (revenue)**: Represents monthly or annual revenue. The unit is **millions of won**.
-- **전년동월 매출액 (year_over_year_revenue)**: Revenue from the same month in the previous year. The unit is **millions of won**.
-- **매출액증가율 (revenue_growth_rate)**: Year-over-year revenue growth rate for a specific month. The unit is **percentage (%)**.
-- **총자산 (total_assets)**: Represents annual total assets. The unit is **millions of won**.
-- **총자산증가율 (total_asset_growth_rate)**: Year-over-year total asset growth rate. The unit is **percentage (%)**.
-- **업종평균 매출액증가율 (industry_average_revenue_growth_rate)**: Average revenue growth rate across the industry. The unit is **percentage (%)**.
-- **업종평균 총자산증가율 (industry_average_asset_growth_rate)**: Average total asset growth rate across the industry. The unit is **percentage (%)**.
-- **누적 매출액증가율 (cumulative_revenue_growth_rate)**: Growth rate of cumulative revenue over the previous year. The unit is **percentage (%)**.
+Before drafting your final comprehensive report, first conduct an internal analysis and place it within `<internal_analysis>` tags. In this internal analysis:
+   a. Organize data chronologically for each dataset, listing out the years and months present.
+   b. Identify the highest and lowest values in each dataset.
+   c. Note any gaps or inconsistencies in the data.
+   d. List out key data points from each dataset, including the latest values and any significant changes.
+   e. Compare annual and monthly data side by side for a more comprehensive view, explicitly noting any discrepancies or correlations.
+   f. Identify key trends and patterns in each dataset.
+   g. Note any significant changes based on the provided thresholds, quoting specific data points.
+   h. Compare the company's performance to industry averages, explicitly considering how the company's metrics stack up.
+   i. Develop insights on the company's financial health and performance.
+   j. Summarize the overall financial health of the company based on the analyzed data.
+
+After completing the internal analysis within `<internal_analysis>`, proceed to draft a **comprehensive report**. This report should:
+
+1. Include specific figures, growth rates, or other exact data points from the analysis to substantiate each insight.
+2. Mention key percentages and values to highlight significant changes or trends, especially where the company outperforms or underperforms against industry averages.
+3. Present insights that go beyond the raw data, analyzing the company's position and providing a rationale for each point with supporting numbers.
+
+Format for the **comprehensive report**:
+- Write as a cohesive paragraph that flows naturally from one point to the next, without separate sections or tags.
+- Avoid merely restating data; use numbers as evidence to support your conclusions and insights.
+- Exclude the `<internal_analysis>` from the final output and provide only the comprehensive report in the final response.
+- Ensure clarity, professionalism, and accuracy in using specific data points.
+
+**Important**: Output only the comprehensive report, and ensure that every insight is substantiated with relevant figures and data.
