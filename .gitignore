@@ -13,12 +13,9 @@
 *.index
 *.sqlite3
 *.bin
-*.wav
-
 .idea/
 .vscode/
-*.lock
-*.toml
+
 
 # 폴더
 */cache/*
@@ -27,8 +24,6 @@
 */convert/*
 */convert2/*
 */unuse/*
-*/corpus/*
-*/mlruns/*
 working/
 
 ### JupyterNotebooks ###
@@ -215,7 +210,4 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/jupyternotebooks,python
-requirements.txt
-pyproject.toml
-requirements.txt
-wheels.zip
+*.lock
