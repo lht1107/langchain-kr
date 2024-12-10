@@ -15,7 +15,9 @@
 *.bin
 .idea/
 .vscode/
-
+*.toml
+*.lock
+*.whl
 
 # 폴더
 */cache/*
@@ -25,6 +27,7 @@
 */convert2/*
 */unuse/*
 working/
+*/poetry_packages
 
 ### JupyterNotebooks ###
 # gitignore template for Jupyter Notebooks
@@ -211,3 +214,5 @@ pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/jupyternotebooks,python
 *.lock
+poetry.lock
+pyproject.toml

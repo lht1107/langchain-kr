@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 from typing import ClassVar, Dict, List
 from datetime import datetime
+import pandas as pd
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -12,7 +13,7 @@ class Settings(BaseSettings):
 
     # 환경 설정 추가
     ENV: str = "development"  # 'production'
-    ACCESS_TIME: ClassVar[datetime] = datetime(2024, 11, 26)
+    ACCESS_TIME: ClassVar[datetime] = pd.Timestamp(datetime(2024, 11, 26))
 
     # 캐시 설정
     CACHE_TYPE: str = "sqlite"  # 'redis', 'sqlite', 'postgresql', 'all'
@@ -52,8 +53,8 @@ class Settings(BaseSettings):
     API_RATE_LIMIT: str = "5/minute"
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")
 
-    INDICATORS: ClassVar[List[str]] = ['growth', 'profitability',
-                                       'partner_stability', 'financial_stability']
+    METRICS: ClassVar[List[str]] = ['growth', 'profitability',
+                                    'partner_stability', 'financial_stability']
 
     REQUIRED_TAGS: ClassVar[Dict[str, List[str]]] = {
         "growth": [

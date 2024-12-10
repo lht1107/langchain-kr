@@ -28,9 +28,10 @@ class SQLiteCache(BaseCache):
             # 분석 결과 테이블
             conn.execute(f"""
                 CREATE TABLE IF NOT EXISTS {settings.SQLITE_TABLE_NAME} (
-                    cache_key TEXT,                
-                    analysis_type TEXT,            
-                    indicator TEXT,                
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    company_name TEXT NOT NULL,
+                    analysis_type TEXT NOT NULL,
+                    analysis_metric TEXT NOT NULL,
                     detailed_result TEXT,
                     summary TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -41,10 +42,10 @@ class SQLiteCache(BaseCache):
             conn.execute(f"""
                 CREATE TABLE IF NOT EXISTS {settings.SQLITE_FEEDBACK_NAME} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    cache_key TEXT NOT NULL,
+                    company_name TEXT NOT NULL,
                     feedback_type TEXT NOT NULL,
                     analysis_type TEXT NOT NULL,
-                    indicator TEXT NOT NULL,
+                    analysis_metric TEXT NOT NULL,
                     feedback_text TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -52,75 +53,91 @@ class SQLiteCache(BaseCache):
             # 인덱스가 없을 때만 생성
             try:
                 conn.execute(f"""
-                    CREATE INDEX idx_cache_lookup ON {settings.SQLITE_TABLE_NAME}
-                    (cache_key, analysis_type, indicator, created_at)
+                    CREATE INDEX IF NOT EXISTS idx_analysis_lookup 
+                    ON {settings.SQLITE_TABLE_NAME} 
+                    (company_name, created_at DESC, analysis_type, analysis_metric)
                 """)
             except sqlite3.OperationalError as e:
                 if "already exists" not in str(e):
                     raise e
 
-    async def get(self, key: str, analysis_type: str = None, indicator: str = None) -> Optional[Dict]:
-        """캐시 데이터 조회"""
+    async def get(
+        self,
+        company_name: str,
+        analysis_type: str,
+        analysis_metric: str
+    ) -> Optional[Dict]:
         try:
             today = datetime.now()
-            company_name = key.split(':')[0]
             current_month = f"{today.year}-{today.month:02d}"
+            prev_month = f"{today.year}-{today.month-1:02d}" if today.month > 1 else f"{today.year-1}-12"
+
+            result = {
+                'strength': {'analysis_metric': None, 'detailed_result': None, 'summary': None},
+                'weakness': {'analysis_metric': None, 'detailed_result': None, 'summary': None},
+                'insight': {'analysis_metric': None, 'summary': None}
+            }
 
             async with aiosqlite.connect(self.db_path) as conn:
-                # 기본 쿼리 구성
-                base_query = f"""
-                    SELECT analysis_type, indicator, detailed_result, summary
-                    FROM {settings.SQLITE_TABLE_NAME}
-                    WHERE cache_key LIKE ?
-                """
-                params = [f"{company_name}:{current_month}-%"]
-
-                # THRESHOLD 이후인 경우
                 if today.day >= settings.THRESHOLD:
-                    base_query += " AND strftime('%d', created_at) >= ?"
-                    params.append(f"{settings.THRESHOLD:02d}")
+                    base_query = f"""
+                        SELECT analysis_type, analysis_metric, detailed_result, summary
+                        FROM {settings.SQLITE_TABLE_NAME}
+                        WHERE company_name = ? 
+                        AND strftime('%Y-%m', created_at) = ?
+                        AND strftime('%d', created_at) >= ?
+                    """
+                    params = [company_name, current_month,
+                              str(settings.THRESHOLD)]
+                else:
+                    base_query = f"""
+                        SELECT analysis_type, analysis_metric, detailed_result, summary
+                        FROM {settings.SQLITE_TABLE_NAME}
+                        WHERE company_name = ? AND (
+                            (strftime('%Y-%m', created_at) = ?) OR
+                            (strftime('%Y-%m', created_at) = ? AND strftime('%d', created_at) >= ?)
+                        )
+                    """
+                    params = [company_name, current_month,
+                              prev_month, str(settings.THRESHOLD)]
 
-                # 특정 분석 유형과 지표가 지정된 경우
-                if analysis_type and indicator:
-                    base_query += " AND analysis_type = ? AND indicator = ?"
-                    params.extend([analysis_type, indicator])
+                if analysis_type == 'insight':
+                    strength_metric, weakness_metric = analysis_metric.split(
+                        '/')
+                    base_query += """ 
+                        AND ((analysis_type = 'strength' AND analysis_metric = ?) OR
+                            (analysis_type = 'weakness' AND analysis_metric = ?) OR
+                            (analysis_type = 'insight' AND analysis_metric = ?))
+                    """
+                    params.extend(
+                        [strength_metric, weakness_metric, analysis_metric])
+                else:
+                    base_query += " AND analysis_type = ? AND analysis_metric = ?"
+                    params.extend([analysis_type, analysis_metric])
 
-                base_query += " ORDER BY created_at DESC LIMIT 1"
+                base_query += " ORDER BY created_at DESC"
 
                 async with conn.execute(base_query, params) as cursor:
                     rows = await cursor.fetchall()
 
-                if not rows:
-                    return None
+                    if not rows:
+                        return None
 
-                result = {
-                    'strength': {'indicator': None, 'detailed_result': None, 'summary': None},
-                    'weakness': {'indicator': None, 'detailed_result': None, 'summary': None},
-                    'insight': {'indicator': None, 'summary': None}
-                }
-
-                for row in rows:
-                    analysis_type, indicator, detailed, summary = row
-                    if analysis_type in ['strength', 'weakness']:
-                        result[analysis_type] = {
-                            'indicator': indicator,
+                    for row in rows:
+                        analysis_type_row, metric, detailed, summary = row
+                        result[analysis_type_row] = {
+                            'analysis_metric': metric,
                             'detailed_result': detailed,
                             'summary': summary
                         }
-                    elif analysis_type == 'insight':
-                        result['insight'] = {
-                            'indicator': indicator,
-                            'summary': summary
-                        }
 
-                return result
+                    return result
 
         except Exception as e:
-            logger.error(f"SQLite get error: {str(e)}")
+            logger.error(f"[SQLite] Get error: {str(e)}")
             return None
 
-    async def set(self, key: str, value: Dict, analysis_type: str) -> None:
-        """캐시 데이터 저장"""
+    async def set(self, company_name: str, value: Dict, analysis_type: str) -> None:
         try:
             async with aiosqlite.connect(self.db_path) as conn:
                 await conn.execute("BEGIN TRANSACTION")
@@ -128,28 +145,29 @@ class SQLiteCache(BaseCache):
                     if analysis_type in ['strength', 'weakness']:
                         await conn.execute(
                             f"""INSERT INTO {settings.SQLITE_TABLE_NAME}
-                            (cache_key, analysis_type, indicator, detailed_result, summary)
+                            (company_name, analysis_type, analysis_metric, detailed_result, summary)
                             VALUES (?, ?, ?, ?, ?)""",
-                            (key,
+                            (company_name,
                              analysis_type,
-                             value[analysis_type]['indicator'],
+                             value[analysis_type]['analysis_metric'],
                              value[analysis_type]['detailed_result'],
                              value[analysis_type]['summary'])
                         )
                     elif analysis_type == 'insight':
                         await conn.execute(
                             f"""INSERT INTO {settings.SQLITE_TABLE_NAME}
-                            (cache_key, analysis_type, indicator, summary)
-                            VALUES (?, ?, ?, ?)""",
-                            (key,
+                            (company_name, analysis_type, analysis_metric, detailed_result, summary)
+                            VALUES (?, ?, ?, ?, ?)""",
+                            (company_name,
                              analysis_type,
-                             value['insight']['indicator'],
+                             value['insight']['analysis_metric'],
+                             None,
                              value['insight']['summary'])
                         )
 
                     await conn.commit()
                     logger.debug(
-                        f"[SQLite] Successfully stored {analysis_type} data for key: {key}")
+                        f"[SQLite] Successfully stored {analysis_type} data for company: {company_name}")
 
                 except Exception as e:
                     await conn.rollback()
@@ -157,7 +175,27 @@ class SQLiteCache(BaseCache):
                     raise e
 
         except Exception as e:
-            logger.error(f"SQLite set error: {str(e)}")
+            logger.error(f"[SQLite] Set error: {str(e)}")
+            raise
+
+    def _create_empty_cache(self) -> Dict:
+        """빈 캐시 데이터 구조 생성"""
+        return {
+            'strength': {
+                'analysis_metric': None,
+                'detailed_result': None,
+                'summary': None
+            },
+            'weakness': {
+                'analysis_metric': None,
+                'detailed_result': None,
+                'summary': None
+            },
+            'insight': {
+                'analysis_metric': None,
+                'summary': None
+            }
+        }
 
     async def close(self) -> None:
         """연결 종료 (컨텍스트 매니저로 관리되므로 별도 처리 불필요)"""

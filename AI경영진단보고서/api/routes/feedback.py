@@ -21,11 +21,14 @@ router = APIRouter(
 
 
 class Feedback(BaseModel):
-    cache_key: str
+    company_name: str
     feedback_type: str
     analysis_type: str
-    indicator: str
+    analysis_metric: str
     feedback_text: str
+
+    class Config:
+        from_attributes = True
 
 
 @router.post("")
@@ -40,13 +43,13 @@ async def create_feedback(feedback: Feedback, request: Request) -> Dict:  # requ
             cursor = conn.cursor()
             cursor.execute(f"""
                 INSERT INTO {settings.SQLITE_FEEDBACK_NAME} 
-                (cache_key, feedback_type, analysis_type, indicator, feedback_text, created_at)
+                (company_name, feedback_type, analysis_type, analysis_metric, feedback_text, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (
-                feedback.cache_key,
+                feedback.company_name,
                 feedback.feedback_type,
                 feedback.analysis_type,
-                feedback.indicator,
+                feedback.analysis_metric,
                 feedback.feedback_text,
                 datetime.now()
             ))

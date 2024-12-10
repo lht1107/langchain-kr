@@ -12,7 +12,7 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-async def create_summary_chain(llm: ChatOpenAI, indicator: str) -> RunnableLambda:
+async def create_summary_chain(llm: ChatOpenAI, analysis_metric: str) -> RunnableLambda:
     """
     Summarizes a detailed analysis using an LLM and a predefined prompt.
 
@@ -28,7 +28,8 @@ async def create_summary_chain(llm: ChatOpenAI, indicator: str) -> RunnableLambd
         FileNotFoundError: If the prompt file is not found.
     """
 
-    logger.info(f"[Chain] Creating summary chain using template '{indicator}'")
+    logger.info(
+        f"[Chain] Creating summary chain using template '{analysis_metric}'")
 
     # Step 1: Load the summary template
     try:
@@ -50,7 +51,7 @@ async def create_summary_chain(llm: ChatOpenAI, indicator: str) -> RunnableLambd
         prompt = PromptTemplate.from_template(summary_template)
         logger.debug("[Chain] Prompt template created successfully")
     except Exception as e:
-        error_msg = f"Failed to create Summary prompt template for '{indicator}'"
+        error_msg = f"Failed to create Summary prompt template for '{analysis_metric}'"
         logger.error(f"[Error] {error_msg}: {str(e)}")
         raise RuntimeError(error_msg) from e
 

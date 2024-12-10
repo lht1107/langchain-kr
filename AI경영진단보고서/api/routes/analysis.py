@@ -1,4 +1,5 @@
 # FastAPI 관련
+from sklearn import metrics
 from fastapi import APIRouter, Path, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 
@@ -64,7 +65,7 @@ router = APIRouter(
 
 
 @router.get('/{company_name}/{analysis_type}')
-@limiter.limit(settings.API_RATE_LIMIT)
+# @limiter.limit(settings.API_RATE_LIMIT)
 async def analyze_company(
     request: Request,
     company_name: str,
@@ -83,12 +84,6 @@ async def analyze_company(
     ''' 
     아래 부분은 수정 필요
     '''
-    # 분석 시작 시간 설정
-    access_time = get_access_time()
-
-    # # 데이터 생성을 상위 레벨로 이동
-    # from utils import generate_sample_data
-    # df_company_info = await asyncio.to_thread(generate_sample_data, access_time)
 
     sample_data_path = os.path.join(settings.BASE_DIR, 'sample.parquet')
     df_company_info = pd.read_parquet(sample_data_path)
@@ -103,70 +98,112 @@ async def analyze_company(
             logger.info(
                 f"[Analysis] Starting {analysis_type} analysis for company: {company_name}")
 
-            # 캐시 키 생성 및 데이터 조회
-            cache_key = cache.generate_cache_key(company_name, access_time)
-            cache_key = cache.generate_cache_key(company_name, access_time)
-            cached_data = await cache.get(cache_key, analysis_type,
-                                          strength_metric if analysis_type == "strength"
-                                          else weakness_metric if analysis_type == "weakness"
-                                          else f"{strength_metric}/{weakness_metric}" if analysis_type == "insight"
-                                          else None
-                                          )
+            # 특정 분석 유형과 메트릭으로 캐시 데이터 조회
+            cached_data = await cache.get(
+                company_name,
+                analysis_type.value,  # AnalysisType enum의 값
+                strength_metric if analysis_type == AnalysisType.STRENGTH
+                else weakness_metric if analysis_type == AnalysisType.WEAKNESS
+                else f"{strength_metric}/{weakness_metric}"
+            )
             '''
             cached_data = {
                 'strength': {
-                    'indicator': None,          # 강점 지표 항목
+                    'analysis_metric': None,          # 강점 지표 항목
                     'detailed_result': None,   # 상세 분석 결과
                     'summary': None             # 요약 분석 결과
                 },
                 'weakness': {
-                    'indicator': None,          # 약점 지표 항목
+                    'analysis_metric': None,          # 약점 지표 항목
                     'detailed_result': None,   # 상세 분석 결과
                     'summary': None             # 요약 분석 결과
                 },
                 'insight': {
-                    'indicator': None           # strength_indicator + '_' + weakness_indicator
+                    'analysis_metric': None           # strength_metric + '_' + weakness_metric
                     'summary': None              # 통찰 분석 결과
                 }
             }
             '''
 
             # 캐시 데이터 검증
-            if cached_data and not cache.validate_cache_data(cached_data):
-                logger.warning(
-                    f"[Cache] Invalid cache data structure - Key: {cache_key}")
-                cached_data = None  # 유효하지 않은 캐시 데이터는 무시
+            if cached_data and cache.validate_cache_data(cached_data):
+                logger.info(
+                    f"[Cache] Successfully loaded cached data for company: {company_name}")
 
-            # 캐시된 데이터가 있고, 해당 분석의 indicator가 존재하는 경우에만 캐시 사용
-            if cached_data:
-                if (analysis_type == AnalysisType.STRENGTH and
-                    cached_data['strength']['indicator'] == strength_metric) or \
-                    (analysis_type == AnalysisType.WEAKNESS and
-                     cached_data['weakness']['indicator'] == weakness_metric) or \
-                    (analysis_type == AnalysisType.INSIGHT and
-                        cached_data['insight']['indicator'] == f"{strength_metric}_{weakness_metric}"):
-                    result = await get_cached_result(cached_data, analysis_type)
-                    if result:
-                        yield result
+                if analysis_type == AnalysisType.INSIGHT:
+                    insight_exists = cached_data['insight'][
+                        'analysis_metric'] == f"{strength_metric}/{weakness_metric}"
+                    strength_exists = cached_data['strength']['analysis_metric'] == strength_metric
+                    weakness_exists = cached_data['weakness']['analysis_metric'] == weakness_metric
+
+                    if insight_exists:
+                        # 캐시된 insight 결과 사용
+                        logger.info(f"[Cache] Using cached insight analysis")
+                        yield cached_data['insight']['summary']
+                        return
+                    elif strength_exists and weakness_exists:
+                        # strength와 weakness는 있지만 insight는 없는 경우
+                        logger.info(
+                            f"[Cache] Both metrics exist. Performing insight analysis")
+                        result = await perform_insight_analysis(company_name, cached_data, insight_llm, cache)
+                        yield result['insight']['summary']
+                        return
+                    else:
+                        # 부분적으로만 캐시가 있는 경우
+                        result = {}
+                        if strength_exists:
+                            result['strength'] = cached_data['strength']
+                            logger.info(
+                                f"[Cache] Using cached strength analysis: {strength_metric}")
+                        if weakness_exists:
+                            result['weakness'] = cached_data['weakness']
+                            logger.info(
+                                f"[Cache] Using cached weakness analysis: {weakness_metric}")
+
+                        # 없는 분석만 수행
+                        result = await perform_new_analysis(
+                            df_company_info,
+                            company_name,
+                            analysis_type,
+                            strength_metric,
+                            weakness_metric,
+                            result,
+                            common_llm,
+                            summary_llm,
+                            insight_llm,
+                            cache
+                        )
+                        yield result['insight']['summary']
+                        return
+
+                elif analysis_type == AnalysisType.STRENGTH:
+                    if cached_data['strength']['analysis_metric'] == strength_metric:
+                        yield cached_data['strength']['summary']
+                        return
+
+                elif analysis_type == AnalysisType.WEAKNESS:
+                    if cached_data['weakness']['analysis_metric'] == weakness_metric:
+                        yield cached_data['weakness']['summary']
                         return
 
             # 새로운 분석 수행
             result = await perform_new_analysis(
-                df_company_info, company_name, access_time, analysis_type, strength_metric, weakness_metric, cached_data, common_llm, summary_llm, insight_llm, cache
+                df_company_info,
+                company_name,
+                analysis_type,
+                strength_metric,
+                weakness_metric,
+                None,
+                common_llm,
+                summary_llm,
+                insight_llm,
+                cache
             )
-
-            # 분석 결과 반환
             yield await get_analysis_result(result, analysis_type)
 
-        except HTTPException as e:
-            logger.error(f"[Error] HTTP Exception: {str(e)}")
-            raise
         except Exception as e:
-            logger.error(f"[Error] Unexpected error: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"An unexpected error occurred: {str(e)}"
-            )
+            logger.error(f"[Error] Analysis failed: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     return StreamingResponse(
         generate_analysis(),
@@ -175,24 +212,8 @@ async def analyze_company(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
         }
-        # return await generate_analysis() streaming 필요 없을 시
     )
-
-
-async def get_cached_result(cached_data: Dict, analysis_type: AnalysisType) -> Optional[str]:
-    """캐시된 결과 반환"""
-    if analysis_type == AnalysisType.STRENGTH:
-        logger.info(
-            f"[Cache] Using cached strength analysis for {cached_data['strength']['indicator']}")
-        return cached_data['strength']['summary']
-    elif analysis_type == AnalysisType.WEAKNESS:
-        logger.info(
-            f"[Cache] Using cached weakness analysis for {cached_data['weakness']['indicator']}")
-        return cached_data['weakness']['summary']
-    elif analysis_type == AnalysisType.INSIGHT:
-        logger.info(f"[Cache] Using cached insight analysis")
-        return cached_data['insight']['summary']
-    return None
+    # return await generate_analysis() streaming 필요 없을 시
 
 
 async def get_analysis_result(result: Dict, analysis_type: AnalysisType) -> str:
@@ -221,7 +242,6 @@ async def get_analysis_result(result: Dict, analysis_type: AnalysisType) -> str:
 async def perform_new_analysis(
     df_company_info: pd.DataFrame,
     company_name: str,
-    access_time: datetime,
     analysis_type: AnalysisType,
     strength_metric: Optional[str] = None,  # 사용자 강점 지정
     weakness_metric: Optional[str] = None,  # 사용자 약점 지정
@@ -232,8 +252,6 @@ async def perform_new_analysis(
     cache: Optional[CacheManager] = None
 ) -> Dict:
     """새로운 분석을 수행하는 함수"""
-
-    cache_key = cache.generate_cache_key(company_name, access_time)
 
     try:
         # 회사 데이터 조회
@@ -246,29 +264,28 @@ async def perform_new_analysis(
                 detail=f"Data for company {company_name} not found."
             )
         result = {}
-
         # 캐시된 데이터 확인
         strength_exists = (cached_data and
-                           cached_data['strength']['indicator'] == strength_metric)
+                           cached_data.get('strength', {}).get('analysis_metric') == strength_metric)
         weakness_exists = (cached_data and
-                           cached_data['weakness']['indicator'] == weakness_metric)
+                           cached_data.get('weakness', {}).get('analysis_metric') == weakness_metric)
 
-        # strength 분석이 필요한 경우
+        # strength 분석
         if analysis_type in [AnalysisType.STRENGTH, AnalysisType.INSIGHT]:
             if strength_exists:
-                strength = cached_data['strength']['indicator']
-                strength_result = cached_data['strength']['detailed_result']
-                strength_summary = cached_data['strength']['summary']
+                result['strength'] = cached_data['strength']
+                logger.info(
+                    f"[Cache] Using cached strength analysis: {strength_metric}")
             else:
-                strength_weakness = determine_strength_weakness(
+                metrics = determine_strength_weakness(
                     df_company_info,
                     company_name,
-                    strength_metric,
-                    weakness_metric
+                    strength_metric=strength_metric,
+                    analysis_type="strength"
                 )
-                strength = strength_weakness['strength']
+                strength = metrics['strength']
                 strength_chain = await create_analysis_chain(
-                    strength, True, common_llm, df_company_info, company_name, access_time
+                    strength, True, common_llm, df_company_info, company_name, settings.ACCESS_TIME
                 )
                 logger.info(
                     f"\n\n[Strength; Detailed] Starting strength analysis for {strength}")
@@ -278,37 +295,36 @@ async def perform_new_analysis(
 
                 logger.info(
                     f"\n\n[Strength; Summary] Starting strength analysis for {strength}")
-                summary_chain = await create_summary_chain(llm=summary_llm, indicator=strength)
+                summary_chain = await create_summary_chain(llm=summary_llm, analysis_metric=strength)
                 strength_summary = ""
                 async for chunk in summary_chain.astream({"detailed_result": strength_result}):
                     strength_summary += chunk
 
-            result['strength'] = {
-                'indicator': strength,
-                'detailed_result': strength_result,
-                'summary': strength_summary
-            }
+                result['strength'] = {
+                    'analysis_metric': strength,
+                    'detailed_result': strength_result,
+                    'summary': strength_summary
+                }
 
-            if cache:
-                await cache.set(cache_key, {'strength': result['strength']}, "strength")
+                if cache:
+                    await cache.set(company_name, {'strength': result['strength']}, "strength")
 
-        # weakness 분석이 필요한 경우
+        # weakness 분석
         if analysis_type in [AnalysisType.WEAKNESS, AnalysisType.INSIGHT]:
             if weakness_exists:
-                weakness = cached_data['weakness']['indicator']
-                weakness_result = cached_data['weakness']['detailed_result']
-                weakness_summary = cached_data['weakness']['summary']
+                result['weakness'] = cached_data['weakness']
+                logger.info(
+                    f"[Cache] Using cached weakness analysis: {weakness_metric}")
             else:
-                if not 'strength_weakness' in locals():
-                    strength_weakness = determine_strength_weakness(
-                        df_company_info,
-                        company_name,
-                        strength_metric,
-                        weakness_metric
-                    )
-                weakness = strength_weakness['weakness']
+                metrics = determine_strength_weakness(
+                    df_company_info,
+                    company_name,
+                    weakness_metric=weakness_metric,
+                    analysis_type='weakness'
+                )
+                weakness = metrics['weakness']
                 weakness_chain = await create_analysis_chain(
-                    weakness, False, common_llm, df_company_info, company_name, access_time
+                    weakness, False, common_llm, df_company_info, company_name, settings.ACCESS_TIME
                 )
                 logger.info(
                     f"\n\n[Weakness; Detailed] Starting weakness analysis for {weakness}")
@@ -318,56 +334,79 @@ async def perform_new_analysis(
 
                 logger.info(
                     f"\n\n[Weakness; Summary] Starting weakness analysis for {weakness}")
-                summary_chain = await create_summary_chain(llm=summary_llm, indicator=weakness)
+                summary_chain = await create_summary_chain(llm=summary_llm, analysis_metric=weakness)
                 weakness_summary = ""
                 async for chunk in summary_chain.astream({"detailed_result": weakness_result}):
                     weakness_summary += chunk
 
-            result['weakness'] = {
-                'indicator': weakness,
-                'detailed_result': weakness_result,
-                'summary': weakness_summary
-            }
+                result['weakness'] = {
+                    'analysis_metric': weakness,
+                    'detailed_result': weakness_result,
+                    'summary': weakness_summary
+                }
 
-            if cache:
-                await cache.set(cache_key, {'weakness': result['weakness']}, "weakness")
+                if cache:
+                    await cache.set(company_name, {'weakness': result['weakness']}, "weakness")
 
-        # insight 분석이 필요한 경우
+        # insight 분석
         if analysis_type == AnalysisType.INSIGHT:
-            insight_prompt_path = os.path.join(
-                settings.PROMPTS_DIR, "insight_template.txt")
-            analysis_prompt = await asyncio.to_thread(load_prompt, insight_prompt_path)
-            final_chain = (
-                RunnableLambda(lambda x: {
-                    'info': merge_analysis_results(x['strength'], x['weakness']),
-                    'strength_name': result['strength']['indicator'],
-                    'weakness_name': result['weakness']['indicator']
-                })
-                | PromptTemplate.from_template(analysis_prompt)
-                | insight_llm
-                | StrOutputParser()
-            )
-
-            logger.info(
-                f"\n\n[Insight] Starting insight analysis by using strength({result['strength']['indicator']}) and weakness({result['weakness']['indicator']})")
-            insight_result = ""
-            async for chunk in final_chain.astream({
-                'strength': result['strength']['detailed_result'],
-                'weakness': result['weakness']['detailed_result']
-            }):
-                insight_result += chunk
-
-            result['insight'] = {
-                'indicator': f"{result['strength']['indicator']}/{result['weakness']['indicator']}",
-                'summary': insight_result
-            }
-
-            # 결과 캐싱
-            if cache:
-                await cache.set(cache_key, {'insight': result['insight']}, "insight")
+            insight_result = await perform_insight_analysis(company_name, result, insight_llm, cache)
+            result['insight'] = insight_result['insight']
 
         return result
 
     except Exception as e:
         logger.error(f"[Error] Analysis failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def perform_insight_analysis(company_name: str, data: Dict, insight_llm: ChatOpenAI, cache: CacheManager) -> Dict:
+    """Insight 분석만 수행하는 함수"""
+    try:
+
+        # data 유효성 검증 추가
+        if not data or 'strength' not in data or 'weakness' not in data:
+            raise ValueError("Invalid data structure for insight analysis")
+
+        insight_prompt_path = os.path.join(
+            settings.PROMPTS_DIR, "insight_template.txt")
+        analysis_prompt = await asyncio.to_thread(load_prompt, insight_prompt_path)
+
+        final_chain = (
+            RunnableLambda(lambda x: {
+                'info': merge_analysis_results(x['strength'], x['weakness']),
+                'strength_metric': data['strength']['analysis_metric'],
+                'weakness_metric': data['weakness']['analysis_metric']
+            })
+            | PromptTemplate.from_template(analysis_prompt)
+            | insight_llm
+            | StrOutputParser()
+        )
+
+        logger.info(
+            f"\n\n[Insight] Starting insight analysis using strength({data['strength']['analysis_metric']}) and weakness({data['weakness']['analysis_metric']})")
+
+        insight_result = ""
+        async for chunk in final_chain.astream({
+            'strength': data['strength']['detailed_result'],
+            'weakness': data['weakness']['detailed_result']
+        }):
+            insight_result += chunk
+
+        result = {
+            'strength': data['strength'],
+            'weakness': data['weakness'],
+            'insight': {
+                'analysis_metric': f"{data['strength']['analysis_metric']}/{data['weakness']['analysis_metric']}",
+                'summary': insight_result
+            }
+        }
+
+        if cache:
+            await cache.set(company_name, result, "insight")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"[Error] Insight analysis failed: {str(e)}")
+        raise

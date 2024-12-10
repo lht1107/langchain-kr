@@ -36,7 +36,7 @@ class PreprocessingError(AnalysisChainError):
 
 
 async def create_analysis_chain(
-    indicator: str,
+    analysis_metric: str,
     is_strength: bool,
     llm: ChatOpenAI,
     df_company_info: pd.DataFrame,
@@ -47,7 +47,7 @@ async def create_analysis_chain(
     비동기 분석 체인 생성
 
     Args:
-        indicator: 분석할 지표 (growth, profitability, partner_stability)
+        analysis_metric: 분석할 지표 (growth, profitability, partner_stability)
         is_strength: 강점 분석 여부
         llm: 언어 모델
         df_company_info: 기업 데이터 DataFrame
@@ -63,7 +63,7 @@ async def create_analysis_chain(
     try:
         logger.info(
             f"[Chain] Creating analysis chain - "
-            f"Indicator: {indicator}, Company: {company_name}, "
+            f"Indicator: {analysis_metric}, Company: {company_name}, "
             f"Is Strength: {is_strength}"
         )
 
@@ -83,18 +83,18 @@ async def create_analysis_chain(
         if not isinstance(is_strength, bool):
             raise ValueError("is_strength must be a boolean")
 
-        if not indicator or not isinstance(indicator, str):
+        if not analysis_metric or not isinstance(analysis_metric, str):
             raise ValueError("Indicator must be a non-empty string")
 
-        if indicator not in settings.REQUIRED_TAGS:
+        if analysis_metric not in settings.REQUIRED_TAGS:
             raise AnalysisChainError(
-                f"Invalid indicator '{indicator}'. Must be one of: {list(settings.REQUIRED_TAGS.keys())}"
+                f"Invalid analysis_metric '{analysis_metric}'. Must be one of: {list(settings.REQUIRED_TAGS.keys())}"
             )
 
         # Step 2: Load and Validate Template
         try:
             template_path = os.path.join(
-                settings.PROMPTS_DIR, f"{indicator}_template.txt")
+                settings.PROMPTS_DIR, f"{analysis_metric}_template.txt")
             if not os.path.exists(template_path):
                 raise TemplateError(
                     f"Template file not found: {template_path}")
@@ -104,11 +104,11 @@ async def create_analysis_chain(
                 raise TemplateError("Template content is invalid")
 
             logger.debug(
-                f"[Template] Successfully loaded template for {indicator}")
+                f"[Template] Successfully loaded template for {analysis_metric}")
 
             # Validate template
             missing_tags = [
-                tag for tag in settings.REQUIRED_TAGS[indicator]
+                tag for tag in settings.REQUIRED_TAGS[analysis_metric]
                 if tag not in base_template
             ]
             if missing_tags:
@@ -134,7 +134,7 @@ async def create_analysis_chain(
                 "Perform analysis on negative side."
             )
             full_template = (
-                f"[{analysis_type} Analysis for {indicator}]\n"
+                f"[{analysis_type} Analysis for {analysis_metric}]\n"
                 f"{base_template}\n\n{additional_prompt}"
             )
 
@@ -159,7 +159,8 @@ async def create_analysis_chain(
 
         # Step 5: Prepare Preprocessing
         try:
-            preprocess_func, data_keys = get_preprocess_and_keys(indicator)
+            preprocess_func, data_keys = get_preprocess_and_keys(
+                analysis_metric)
             if not callable(preprocess_func):
                 raise PreprocessingError("Invalid preprocessing function")
             if not isinstance(data_keys, list) or not data_keys:
@@ -210,7 +211,7 @@ async def create_analysis_chain(
         raise AnalysisChainError(error_msg) from e
 
 
-def get_preprocess_and_keys(indicator: str) -> Tuple[callable, list]:
+def get_preprocess_and_keys(analysis_metric: str) -> Tuple[callable, list]:
     """전처리 함수와 데이터 키 매핑"""
 
     # 전처리 함수 매핑
@@ -221,10 +222,10 @@ def get_preprocess_and_keys(indicator: str) -> Tuple[callable, list]:
         'financial_stability': preprocess_financial_stability_data
     }
 
-    if indicator not in settings.REQUIRED_TAGS:
-        raise ValueError(f"Unsupported indicator: {indicator}")
+    if analysis_metric not in settings.REQUIRED_TAGS:
+        raise ValueError(f"Unsupported analysis_metric: {analysis_metric}")
 
     # settings에서 정의된 태그에서 중괄호 제거하여 키 목록 생성
-    keys = [tag.strip('{}') for tag in settings.REQUIRED_TAGS[indicator]]
+    keys = [tag.strip('{}') for tag in settings.REQUIRED_TAGS[analysis_metric]]
 
-    return preprocess_functions[indicator], keys
+    return preprocess_functions[analysis_metric], keys

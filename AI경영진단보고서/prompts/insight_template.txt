@@ -1,4 +1,4 @@
-You are a skilled business analyst tasked with providing a concise summary and recommendations based on a company's strengths ({strength_name}) and weaknesses ({weakness_name}). Your analysis and recommendations should be presented in Korean.
+You are a skilled business analyst tasked with providing a concise summary and recommendations based on a company's strengths ({strength_metric}) and weaknesses ({weakness_metric}). Your analysis and recommendations should be presented in Korean.
 
 Here is the detailed information about the company's strengths and weaknesses:
 

@@ -1,6 +1,7 @@
 # 1. 기본 모듈 임포트
 # fmt: off
 from typing import Dict, Any, Optional
+import asyncio
 import sqlite3
 from datetime import datetime
 import json
@@ -17,6 +18,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 from core import settings
 from utils.load_prompt import load_prompt 
+from database.sqlite_cache import SQLiteCache
 # fmt: on
 # 2. 프로젝트 루트 경로 설정
 
@@ -66,31 +68,33 @@ def process_dataframe(metrics_data, metric):
     return df
 
 
-def submit_feedback(
-    cache_key: str,
-    feedback_type: str,
-    feedback_text: str,
-    analysis_type: str,
-    indicator: str
-):
+def submit_feedback(company_name: str, feedback_type: str, feedback_text: str,
+                    analysis_type: str, analysis_metric: str) -> bool:
+    """피드백 제출 함수"""
     try:
-        if not cache_key:
-            st.error("분석 결과가 없습니다. 먼저 분석을 실행해주세요.")
+        if not feedback_text:
+            st.error("피드백 내용을 입력해주세요.")
             return False
+
+        feedback_data = {
+            "company_name": company_name or "unknown",
+            "feedback_type": feedback_type,
+            "analysis_type": analysis_type,
+            "analysis_metric": analysis_metric or "none",
+            "feedback_text": feedback_text
+        }
 
         response = requests.post(
             "http://127.0.0.1:8000/feedback",
-            json={
-                "cache_key": cache_key,
-                "feedback_type": feedback_type,
-                "analysis_type": analysis_type,
-                "indicator": indicator,
-                "feedback_text": feedback_text
-            },
+            json=feedback_data,
+            headers={"Content-Type": "application/json"},
             timeout=10
         )
+
         return response.status_code == 200
-    except requests.exceptions.RequestException:
+
+    except requests.exceptions.RequestException as e:
+        st.error(f"피드백 전송 중 오류가 발생했습니다. 다시 시도해주세요.")
         return False
 
 # SQLite 캐시 확인 함수
@@ -99,37 +103,51 @@ def submit_feedback(
 def check_cache(company_name: str, strength_metric: str = None, weakness_metric: str = None) -> Optional[Dict]:
     """SQLite 캐시 확인"""
     try:
-        today = datetime.now()
-        current_month = f"{today.year}-{today.month:02d}"
-
         if not os.path.exists(DB_PATH):
             st.error(f"데이터베이스 파일을 찾을 수 없습니다: {DB_PATH}")
             return None
 
+        today = datetime.now()
+        current_month = f"{today.year}-{today.month:02d}"
+        prev_month = f"{today.year}-{today.month-1:02d}" if today.month > 1 else f"{today.year-1}-12"
+
+        result = {
+            'strength': {'analysis_metric': None, 'detailed_result': None, 'summary': None},
+            'weakness': {'analysis_metric': None, 'detailed_result': None, 'summary': None},
+            'insight': {'analysis_metric': None, 'summary': None}
+        }
+
         with sqlite3.connect(DB_PATH) as conn:
-            # 기본 쿼리 구성
-            base_query = f"""
-                SELECT cache_key, analysis_type, indicator, detailed_result, summary
-                FROM {settings.SQLITE_TABLE_NAME}
-                WHERE cache_key LIKE ?
-                AND analysis_type IN ('strength', 'weakness', 'insight')
-            """
-            params = [f"{company_name}:{current_month}-%"]
-
             if today.day >= settings.THRESHOLD:
-                base_query += " AND strftime('%d', created_at) >= ?"
-                params.append(f"{settings.THRESHOLD:02d}")
+                base_query = f"""
+                    SELECT analysis_type, analysis_metric, detailed_result, summary
+                    FROM {settings.SQLITE_TABLE_NAME}
+                    WHERE company_name = ? 
+                    AND strftime('%Y-%m', created_at) = ?
+                    AND strftime('%d', created_at) >= ?
+                """
+                params = [company_name, current_month, str(settings.THRESHOLD)]
+            else:
+                base_query = f"""
+                    SELECT analysis_type, analysis_metric, detailed_result, summary
+                    FROM {settings.SQLITE_TABLE_NAME}
+                    WHERE company_name = ? AND (
+                        (strftime('%Y-%m', created_at) = ?) OR
+                        (strftime('%Y-%m', created_at) = ? AND strftime('%d', created_at) >= ?)
+                    )
+                """
+                params = [company_name, current_month,
+                          prev_month, str(settings.THRESHOLD)]
 
-            # 특정 지표에 대한 필터링
-            if strength_metric or weakness_metric:
-                base_query += """ AND (
-                    (analysis_type = 'strength' AND indicator = ?)
-                    OR (analysis_type = 'weakness' AND indicator = ?)
-                    OR (analysis_type = 'insight' AND indicator = ?)
-                )"""
-                insight_indicator = f"{strength_metric}/{weakness_metric}" if strength_metric and weakness_metric else None
+            if strength_metric and weakness_metric:
+                analysis_metric = f"{strength_metric}/{weakness_metric}"
+                base_query += """ 
+                    AND ((analysis_type = 'strength' AND analysis_metric = ?) OR
+                         (analysis_type = 'weakness' AND analysis_metric = ?) OR
+                         (analysis_type = 'insight' AND analysis_metric = ?))
+                """
                 params.extend(
-                    [strength_metric, weakness_metric, insight_indicator])
+                    [strength_metric, weakness_metric, analysis_metric])
 
             base_query += " ORDER BY created_at DESC"
 
@@ -139,40 +157,102 @@ def check_cache(company_name: str, strength_metric: str = None, weakness_metric:
             if not rows:
                 return None
 
-            result = {
-                'cache_key': rows[0][0],
-                'strength': {'indicator': None, 'detailed_result': None, 'summary': None},
-                'weakness': {'indicator': None, 'detailed_result': None, 'summary': None},
-                'insight': {'indicator': None, 'summary': None}
-            }
-
-            # 각 분석 유형별 최신 데이터 처리
-            seen_types = set()
             for row in rows:
-                cache_key, analysis_type, indicator, detailed, summary = row
-
-                if analysis_type not in seen_types:
-                    seen_types.add(analysis_type)
-                    if analysis_type in ['strength', 'weakness']:
-                        result[analysis_type] = {
-                            'indicator': indicator,
-                            'detailed_result': detailed,
-                            'summary': summary
-                        }
-                    elif analysis_type == 'insight':
-                        result['insight'] = {
-                            'indicator': indicator,
-                            'summary': summary
-                        }
-
-                if len(seen_types) == 3:  # strength, weakness, insight 모두 찾음
-                    break
+                analysis_type_row, metric, detailed, summary = row
+                result[analysis_type_row] = {
+                    'analysis_metric': metric,
+                    'detailed_result': detailed,
+                    'summary': summary
+                }
 
             return result
 
-    except sqlite3.Error as e:
-        st.error(f"데이터베이스 오류: {str(e)}")
+    except Exception as e:
+        st.error(f"캐시 조회 오류: {str(e)}")
         return None
+
+# def check_cache(company_name: str, strength_metric: str = None, weakness_metric: str = None) -> Optional[Dict]:
+#     """SQLite 캐시 확인"""
+#     try:
+#         today = datetime.now()
+#         current_month = f"{today.year}-{today.month:02d}"
+#         prev_month = f"{today.year}-{today.month-1:02d}" if today.month > 1 else f"{today.year-1}-12"
+
+#         if not os.path.exists(DB_PATH):
+#             st.error(f"데이터베이스 파일을 찾을 수 없습니다: {DB_PATH}")
+#             return None
+
+#         with sqlite3.connect(DB_PATH) as conn:
+#             # 현재가 26일 이후인 경우와 이전인 경우를 구분
+#             if today.day >= settings.THRESHOLD:
+#                 # 26일 이후면 현재 월의 26일 이후 데이터만 조회
+#                 base_query = f"""
+#                     SELECT analysis_type, analysis_metric, detailed_result, summary
+#                     FROM {settings.SQLITE_TABLE_NAME}
+#                     WHERE company_name = ?
+#                     AND strftime('%Y-%m', created_at) = ?
+#                     AND strftime('%d', created_at) >= ?
+#                 """
+#                 params = [company_name, current_month, str(settings.THRESHOLD)]
+#             else:
+#                 # 26일 이전이면 현재 월 데이터 또는 이전 월 26일 이후 데이터 조회
+#                 base_query = f"""
+#                     SELECT analysis_type, analysis_metric, detailed_result, summary
+#                     FROM {settings.SQLITE_TABLE_NAME}
+#                     WHERE company_name = ? AND (
+#                         (strftime('%Y-%m', created_at) = ?) OR
+#                         (strftime('%Y-%m', created_at) = ? AND strftime('%d', created_at) >= ?)
+#                     )
+#                 """
+#                 params = [company_name, current_month,
+#                           prev_month, str(settings.THRESHOLD)]
+
+#             if strength_metric or weakness_metric:
+#                 base_query += """ AND (
+#                     (analysis_type = 'strength' AND analysis_metric = ?) OR
+#                     (analysis_type = 'weakness' AND analysis_metric = ?) OR
+#                     (analysis_type = 'insight' AND analysis_metric = ?)
+#                 )"""
+#                 insight_metric = f"{strength_metric}/{weakness_metric}" if strength_metric and weakness_metric else None
+#                 params.extend(
+#                     [strength_metric, weakness_metric, insight_metric])
+
+#             base_query += " ORDER BY created_at DESC"
+
+#             cursor = conn.execute(base_query, params)
+#             rows = cursor.fetchall()
+
+#             if not rows:
+#                 return None
+
+#             result = {
+#                 'strength': {'analysis_metric': None, 'detailed_result': None, 'summary': None},
+#                 'weakness': {'analysis_metric': None, 'detailed_result': None, 'summary': None},
+#                 'insight': {'analysis_metric': None, 'summary': None}
+#             }
+
+#             seen_types = set()
+#             for row in rows:
+#                 analysis_type, metric, detailed, summary = row
+#                 if analysis_type not in seen_types:
+#                     seen_types.add(analysis_type)
+#                     if analysis_type in ['strength', 'weakness']:
+#                         result[analysis_type] = {
+#                             'analysis_metric': metric,
+#                             'detailed_result': detailed,
+#                             'summary': summary
+#                         }
+#                     elif analysis_type == 'insight':
+#                         result['insight'] = {
+#                             'analysis_metric': metric,
+#                             'summary': summary
+#                         }
+
+#             return result
+
+#     except sqlite3.Error as e:
+#         st.error(f"데이터베이스 오류: {str(e)}")
+#         return None
 
 
 @st.cache_data
@@ -180,10 +260,15 @@ def load_company_data():
     return pd.read_csv('overview_table.csv')
 
 
-def perform_analysis(selected_company: str, strength_metric: str = None, weakness_metric: str = None) -> Optional[Dict]:
+def perform_analysis(selected_company: str, cached_data: Optional[Dict]) -> Optional[Dict]:
     """새로운 분석 수행"""
-
     try:
+        if cached_data and cached_data.get('strength').get('analysis_metric') and cached_data.get('weakness').get('analysis_metric') and cached_data.get('insight').get('analysis_metric'):
+            return cached_data
+
+        strength_metric = st.session_state.strength_selector
+        weakness_metric = st.session_state.weakness_selector
+
         response = requests.get(
             f"http://127.0.0.1:8000/analyze/{selected_company}/insight",
             params={
@@ -192,24 +277,15 @@ def perform_analysis(selected_company: str, strength_metric: str = None, weaknes
             },
             timeout=60
         )
-        response.raise_for_status()  # 400이면 HTTPError 발생, 성공 (200)이면, 동작 無
+        response.raise_for_status()
 
-        if response.status_code == 200 and response.content:
-            try:
-                return response.json()
-            except json.JSONDecodeError:
-                # API가 성공적으로 실행되었다면 캐시에서 데이터를 가져옴
-                cached_data = check_cache(selected_company,
-                                          strength_metric=strength_metric,
-                                          weakness_metric=weakness_metric)
-                if cached_data:
-                    return cached_data
-                else:
-                    st.error("분석은 완료되었으나 결과를 불러오는데 실패했습니다.")
-                    return None
-        else:
-            st.error("API 응답이 비어있습니다.")
-            return None
+        if response.status_code == 200:
+            # analyze endpoint에서 이미 캐시 저장을 수행했으므로
+            # 저장된 데이터를 바로 로드
+            return check_cache(selected_company, strength_metric=strength_metric, weakness_metric=weakness_metric)
+
+        st.error("분석은 완료되었으나 결과를 불러오는데 실패했습니다.")
+        return None
 
     except requests.exceptions.Timeout:
         st.error("분석 시간이 초과되었습니다. 다시 시도해주세요.")
@@ -263,18 +339,26 @@ def display_analysis_results(data, title, metric_info, company_name, is_strength
             unsafe_allow_html=True
         )
 
-        with tab1:
-            # 연간 데이터 표시
-            metrics_response = requests.get(
-                f"http://127.0.0.1:8000/query/{company_name}/{'strength' if is_strength else 'weakness'}",
-                params={
-                    'strength_metric': st.session_state.strength_selector if is_strength else None,
-                    'weakness_metric': st.session_state.weakness_selector if not is_strength else None
-                },
-                timeout=60
-            )
-            if metrics_response.status_code == 200:
+        # 연간 데이터 표시
+        metrics_response = requests.get(
+            f"http://127.0.0.1:8000/query/{company_name}/{'strength' if is_strength else 'weakness'}",
+            params={
+                'strength_metric': st.session_state.strength_selector if is_strength else None,
+                'weakness_metric': st.session_state.weakness_selector if not is_strength else None
+            },
+            timeout=60
+        )
+
+        metrics_data = None
+        if metrics_response.status_code == 200:
+            try:
                 metrics_data = metrics_response.json()
+            except json.JSONDecoderError:
+                st.error("데이터 형식이 올바르지 않습니다.")
+                return
+
+        with tab1:
+            if metrics_data:
                 for metric in metric_info.get('annual', []):
                     if metric in metrics_data:
                         df = process_dataframe(metrics_data, metric)
@@ -297,7 +381,7 @@ def display_analysis_results(data, title, metric_info, company_name, is_strength
 
         with tab2:
             # 월간 데이터 표시
-            if metrics_response.status_code == 200:
+            if metrics_data:
                 monthly_data = {k: v for k, v in metrics_data.items(
                 ) if k in metric_info.get('monthly', [])}
                 for metric in metric_info.get('monthly', []):
@@ -327,8 +411,8 @@ def display_analysis_results(data, title, metric_info, company_name, is_strength
         with tab4:
             # 분석 템플릿 로드 및 표시
             try:
-                indicator = data['indicator']
-                template_file = f"{indicator}_template.txt"
+                analysis_metric = data['analysis_metric']
+                template_file = f"{analysis_metric}_template.txt"
                 template_content = load_prompt(template_file)
                 st.code(template_content, language='yaml')
             except FileNotFoundError as e:
@@ -345,7 +429,39 @@ def display_analysis_results(data, title, metric_info, company_name, is_strength
     time.sleep(1)  # 0.5초 간격
     # 요약 표시
     st.subheader(f"💡 {title} 요약")
-    st.markdown(data['summary'])
+
+    # def stream_summary():
+    #     for word in data['summary'].split():
+    #         yield word + " "
+    #         time.sleep(0.02)
+
+    st.write_stream(stream_summary(data['summary']))
+    # st.markdown(data['summary'])
+
+
+def format_summary_text(text: str) -> str:
+    import re
+
+    # 숫자 패턴 정규식
+    patterns = [
+        r'(\d+(?:,\d+)*\s*백만\s*원)',
+        r'(\d+(?:\.\d+)?%)',
+        r'(\d+\s*일)'
+    ]
+
+    formatted_text = text
+    for pattern in patterns:
+        formatted_text = re.sub(pattern, r'**\1**', formatted_text)
+
+    return formatted_text
+
+
+def stream_summary(text: str):
+    formatted_text = format_summary_text(text)
+    words = formatted_text.split()
+    for word in words:
+        yield word + " "
+        time.sleep(0.03)
 
 
 def generate_pdf_report(data, company_name):
@@ -390,13 +506,17 @@ def generate_pdf_report(data, company_name):
         story.append(Paragraph(title, styles['Heading']))
 
         # 지표 데이터 표시
-        metric_info = metrics_mapping.get(data[section]['indicator'], {})
+        metric_info = metrics_mapping.get(data[section]['analysis_metric'], {})
 
         # 연간 지표
         if metric_info.get('annual'):
             story.append(Paragraph("연간 지표", styles['Korean']))
             metrics_response = requests.get(
                 f"http://127.0.0.1:8000/query/{company_name}/{section}",
+                params={
+                    'strength_metric': data['strength']['analysis_metric'] if section == 'strength' else None,
+                    'weakness_metric': data['weakness']['analysis_metric'] if section == 'weakness' else None
+                },
                 timeout=60
             )
             if metrics_response.status_code == 200:
@@ -441,8 +561,9 @@ def display_results(data: Dict, company_name: str):
 
         # 강점 분석 섹션
         time.sleep(1)
-        st.toast("💪 강점 분석을 시작합니다", icon="💡")
-        metric_info = metrics_mapping.get(data['strength']['indicator'], {})
+        st.toast("💪 강점 분석을 시작합니다")  # , icon="💡")
+        metric_info = metrics_mapping.get(
+            data['strength']['analysis_metric'], {})
         st.subheader(f"{metric_info.get('title', '')} (강점)")
 
         display_analysis_results(
@@ -456,8 +577,9 @@ def display_results(data: Dict, company_name: str):
 
         # 약점 분석 섹션
         time.sleep(1)
-        st.toast("🔍 약점 분석을 시작합니다", icon="⚠️")
-        metric_info = metrics_mapping.get(data['weakness']['indicator'], {})
+        st.toast("🔍 약점 분석을 시작합니다")  # , icon="⚠️")
+        metric_info = metrics_mapping.get(
+            data['weakness']['analysis_metric'], {})
         st.subheader(f"{metric_info.get('title', '')} (약점)")
 
         display_analysis_results(
@@ -472,9 +594,12 @@ def display_results(data: Dict, company_name: str):
 
         # 최종 통찰 섹션
         time.sleep(1)
-        st.toast("🎯 통찰 분석을 시작합니다", icon="✨")
+        st.toast("🎯 통찰 분석을 시작합니다")  # , icon="✨")
         st.subheader("🎯 최종 통찰")
-        st.markdown(data['insight']['summary'])
+        with st.expander("Insight Template", icon="🔮"):
+            template_content = load_prompt("insight_template.txt")
+            st.code(template_content, language='yaml')
+        st.write_stream(stream_summary(data['insight']['summary']))
 
         # PDF 다운로드
         pdf_buffer = generate_pdf_report(data, company_name)
@@ -510,15 +635,22 @@ def display_metric_data(metrics_data: Dict, metric_info: Dict):
 
 
 def main():
+
+    # 세션 스테이트 초기화
+    if 'current_analysis' not in st.session_state:
+        st.session_state.current_analysis = None
+    if 'analysis_started' not in st.session_state:
+        st.session_state.analysis_started = False
+
     st.title("📊 AI경영진단보고서 베타 테스트")
 
     # 데이터 로드
     df = load_company_data()
     df = df.head(10)
 
-    # 사이드바에 기업 목록 표시
+    # 사이드바 구성
     with st.sidebar:
-        # 상단 섹션
+        # 기업 선택 섹션
         top_section = st.container(border=True)
         with top_section:
             st.header("🏢 기업 선택")
@@ -528,13 +660,10 @@ def main():
                 key="company_selector"
             )
 
-            # 중간 여백
             st.markdown("<br>" * 1, unsafe_allow_html=True)
 
             # 강점/약점 지표 선택
             st.subheader("📊 분석 지표 선택")
-
-            # 강점 지표 선택
             strength_metric = st.selectbox(
                 "강점 지표",
                 options=list(metrics_mapping.keys()),
@@ -542,7 +671,6 @@ def main():
                 key="strength_selector"
             )
 
-            # 약점 지표 선택
             weakness_metric = st.selectbox(
                 "약점 지표",
                 options=[m for m in metrics_mapping.keys() if m !=
@@ -551,25 +679,18 @@ def main():
                 key="weakness_selector"
             )
 
-            analyze_button = st.button("분석 시작")
+            # 분석 시작 버튼
+            if st.button("분석 시작", key='analyze_button'):
+                st.session_state.analysis_started = True
+                st.session_state.current_analysis = None
 
-        # 중간 여백
-        # st.markdown("<br>" * 5, unsafe_allow_html=True)
         st.divider()
 
-        # 하단 피드백 섹션
-        feedback_section = st.container(border=True)
-        with feedback_section:
-            st.header("📝 피드백")
+        st.header("📝 피드백")
 
-            # 피드백 유형 선택
-            feedback_type = st.radio(
-                "피드백 유형",
-                options=["개선사항", "오류신고", "기타"],
-                horizontal=True
-            )
+        # form으로 피드백 섹션 감싸기
+        with st.form("feedback_form", clear_on_submit=False):
 
-            # 분석 유형 선택
             analysis_type = st.selectbox(
                 "분석 유형",
                 options=["strength", "weakness", "insight"],
@@ -577,82 +698,151 @@ def main():
                     "strength": "강점 분석",
                     "weakness": "약점 분석",
                     "insight": "통찰 분석"
-                }[x]
+                }[x],
+                key="analysis_type_select"
             )
 
+            if "current_analysis_metric" not in st.session_state:
+                st.session_state.current_analysis_metric = None
+
             # 현재 선택된 분석 유형의 지표 표시
-            if analysis_type in ["strength", "weakness"]:
-                metric_info = metrics_mapping.get(
-                    strength_metric if analysis_type == "strength" else weakness_metric,
-                    {}
-                )
-                st.caption(f"📊 선택된 지표: {metric_info.get('title', '')}")
-            elif analysis_type == "insight":
+            if analysis_type == "strength":
+                st.session_state.current_analysis_metric = st.session_state.get(
+                    'strength_selector')
+                st.caption(
+                    f"📊 선택된 지표: {metrics_mapping.get(st.session_state.current_analysis_metric, {}).get('title', '')}")
+            elif analysis_type == "weakness":
+                st.session_state.current_analysis_metric = st.session_state.get(
+                    'weakness_selector')
+                st.caption(
+                    f"📊 선택된 지표: {metrics_mapping.get(st.session_state.current_analysis_metric, {}).get('title', '')}")
+            else:
+                strength_metric = st.session_state.get('strength_selector')
+                weakness_metric = st.session_state.get('weakness_selector')
+                st.session_state.current_analysis_metric = f"{strength_metric}/{weakness_metric}"
                 st.caption(
                     f"📊 선택된 지표: 강점({metrics_mapping.get(strength_metric, {}).get('title', '')}) + 약점({metrics_mapping.get(weakness_metric, {}).get('title', '')})")
 
-            # 피드백 내용
-            feedback_text = st.text_area(
-                "의견을 남겨주세요",
-                placeholder="분석 결과나 사용성에 대한 의견을 자유롭게 작성해주세요."
+            feedback_type = st.radio(
+                "피드백 유형",
+                options=["개선사항", "오류신고", "기타"],
+                horizontal=True,
+                key="feedback_type_radio"  # 고유한 key 추가
             )
 
-            submit_button = st.button("피드백 제출")
+            feedback_text = st.text_area(
+                "의견을 남겨주세요",
+                placeholder="분석 결과나 사용성에 대한 의견을 자유롭게 작성해주세요.",
+                key="feedback_text_area"  # 고유한 key 추가
+            )
 
-            if submit_button and feedback_text:
-                if "current_cache_key" not in st.session_state:
-                    st.error("먼저 분석을 실행해주세요.")
-                else:
-                    current_indicator = (
-                        strength_metric if analysis_type == "strength"
-                        else weakness_metric if analysis_type == "weakness"
-                        else f"{strength_metric}/{weakness_metric}"
-                    )
+            # 폼 제출 버튼
+            submitted = st.form_submit_button("피드백 제출")
+            if submitted:
+                if not st.session_state.analysis_started:
+                    st.warning("먼저 분석을 시작해주세요!")
+                    return
+
+                if feedback_text:
                     if submit_feedback(
-                        st.session_state.current_cache_key,
+                        st.session_state.get("company_selector", ""),
                         feedback_type,
                         feedback_text,
                         analysis_type,
-                        current_indicator
+                        st.session_state.current_analysis_metric
                     ):
                         st.success("피드백이 성공적으로 저장되었습니다!")
                         st.balloons()
+                else:
+                    st.error("피드백 내용을 입력해주세요.")
 
-    # 메인 화면
-    if selected_company and analyze_button:
-        with st.spinner(f"🔄 {selected_company} 분석 중..."):
-            cached_data = check_cache(selected_company,
-                                      strength_metric=strength_metric,
-                                      weakness_metric=weakness_metric)
+    # 메인 화면 내용
+    if not st.session_state.analyze_button:
+        st.empty()
+        st.markdown("""## 👋 AI 경영진단보고서 사용 안내""")
+        col1, col2 = st.columns([6, 4])
 
-            if cached_data:
-                st.session_state.current_cache_key = cached_data['cache_key']
-                st.toast("💾 캐시된 데이터를 불러왔습니다", icon="✅")
-                display_results(cached_data, selected_company)
-            else:
-                progress_bar = st.progress(0)
-                status_text = st.empty()
+        with col1:
+            st.markdown("""
+            ### 🎯 주요 기능
+            1. **기업 분석**: 선택한 기업의 강점과 약점을 AI가 분석
+            2. **맞춤형 통찰**: 재무/성장/수익성 등 다양한 지표 기반 분석
+            3. **실시간 피드백**: 분석 결과에 대한 의견을 즉시 제출 가능
 
-                status_text.text("분석을 시작합니다...")
-                st.toast("🚀 분석을 시작합니다", icon="ℹ️")
-                progress_bar.progress(25)
+            ### 💫 사용 방법
+            1. 왼쪽 사이드바에서 기업을 선택하세요
+            2. 분석하고 싶은 강점과 약점 지표를 선택하세요
+            3. '분석 시작' 버튼을 클릭하면 AI가 분석을 시작합니다
 
-                # API 호출 시 선택된 지표 전달
-                data = perform_analysis(
+            ### 📊 분석 결과
+            - **상세 데이터**: 연간/월간 지표 데이터 제공
+            - **AI 분석**: 선택한 지표에 대한 심층 분석
+            - **PDF 보고서**: 분석 결과를 보고서로 다운로드 가능
+            
+            ### 💾 데이터 관리
+            - 🗄️ **SQLite 캐시 시스템**
+                - 빠른 데이터 접근 및 조회
+                - 분석 결과 자동 캐싱
+            - 🔄 **데이터 갱신**
+                - 매월 26일 자동 업데이트
+                - 최신 데이터 유지
+            - 📦 **영구 저장소**
+                - 분석 이력 추적
+                - 피드백 데이터 축적
+            """)
+
+        with col2:
+            st.markdown("""
+            ### 🔧 기술 스택
+
+            #### 🚀 API 엔드포인트
+            - 🎯 `/analyze/{company}/insight`
+                - 기업별 맞춤형 분석 실행
+                - 강점/약점/통찰 결과 생성
+            - 📊 `/query/{company}/{analysis_type}`
+                - 기업별 상세 지표 데이터 조회
+                - 연간/월간 데이터 제공
+            - 📝 `/feedback`
+                - 실시간 사용자 피드백 수집
+                - 분석 결과별 의견 저장
+
+            #### ⚙️ 주요 매개변수
+            - 🏢 `company_name`: 분석 대상 기업 식별자
+            - 💪 `strength_metric`: 강점 분석 지표 선택
+            - 🔍 `weakness_metric`: 약점 분석 지표 선택
+            - 📈 `analysis_type`: strength/weakness/insight 분석 유형
+
+            > 💫 신규 분석 시, 최대 약 1분 정도 소요됩니다
+            > 
+            > ⚡ 이전 분석 결과는 자동으로 캐시되어 즉시 확인 가능합니다
+            """)
+        return
+
+    # 분석 실행 및 결과 표시
+    if st.session_state.analysis_started and st.session_state.company_selector:
+        if st.session_state.current_analysis is None:
+            with st.spinner(f"🔄 {selected_company} 분석 중..."):
+                cached_data = check_cache(
                     selected_company,
-                    strength_metric=strength_metric,
-                    weakness_metric=weakness_metric
+                    strength_metric=st.session_state.strength_selector,
+                    weakness_metric=st.session_state.weakness_selector
                 )
 
-                if data:
-                    progress_bar.progress(75)
-                    status_text.text("분석 결과를 저장하고 표시합니다...")
-                    st.toast("📊 분석 결과를 저장하고 표시합니다", icon="ℹ️")
-                    display_results(data, selected_company)
-                    progress_bar.progress(100)
-                    st.toast("✨ 분석이 완료되었습니다", icon="✅")
-                    status_text.empty()
+                if cached_data and all(cached_data.get(k, {}).get('analysis_metric') for k in ['strength', 'weakness', 'insight']):
+                    st.toast("💾 캐시된 데이터를 불러왔습니다")
+                    st.session_state.current_analysis = cached_data
+                else:
+                    data = perform_analysis(selected_company, None)
+                    if data:
+                        st.session_state.current_analysis = data
+
+        # 저장된 분석 결과 표시
+        if st.session_state.current_analysis:
+            display_results(st.session_state.current_analysis,
+                            selected_company)
 
 
 if __name__ == "__main__":
     main()
+
+# %%

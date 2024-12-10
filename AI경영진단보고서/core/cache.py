@@ -53,10 +53,10 @@ class CacheManager:
             logger.error(f"[Cache] Failed to initialize storages: {str(e)}")
             raise
 
-    def generate_cache_key(self, company_name: str, access_time: datetime) -> str:
-        """캐시 키 생성 함수"""
-        base_key = f"{company_name}:{access_time.strftime(settings.TIMESTAMP)}"
-        return base_key
+    # def generate_cache_company_name(self, company_name: str, access_time: datetime) -> str:
+    #     """캐시 키 생성 함수"""
+    #     base_company_name = f"{company_name}:{access_time.strftime(settings.TIMESTAMP)}"
+    #     return base_company_name
 
     def validate_cache_data(self, data: Dict) -> bool:
         try:
@@ -69,13 +69,13 @@ class CacheManager:
 
             # strength와 weakness 검증
             required_analysis_fields = {
-                'indicator', 'detailed_result', 'summary'}
+                'analysis_metric', 'detailed_result', 'summary'}
             for analysis_type in ['strength', 'weakness']:
                 if not all(field in data[analysis_type] for field in required_analysis_fields):
                     return False
 
             # insight 검증
-            if not all(field in data['insight'] for field in ['indicator', 'summary']):
+            if not all(field in data['insight'] for field in ['analysis_metric', 'summary']):
                 return False
 
             return True
@@ -83,48 +83,72 @@ class CacheManager:
             logger.error(f"Validation error: {str(e)}")
             return False
 
-    async def get(self, key: str, analysis_type: str = None, indicator: str = None):
+    async def get(self, company_name: str, analysis_type: str = None, analysis_metric: str = None):
         """캐시 데이터 조회"""
         for storage in self.storages:
             try:
-                result = await storage.get(key, analysis_type, indicator)
+                result = await storage.get(company_name, analysis_type, analysis_metric)
                 if result and self.validate_cache_data(result):
-                    logger.debug(f"[Cache] Hit - Key: {key}")
+                    logger.debug(
+                        f"[Cache] Hit - company_name: {company_name}")
                     return result
             except Exception as e:
                 logger.error(
-                    f"[Cache] Error getting data from {storage.__class__.__name__}: {str(e)}")
+                    f"[Cache] Error getting data {storage.__class__.__name__}: {str(e)}")
 
-        logger.info(f"[Cache] Miss - Key: {key}")
+        # logger.info(
+        #     f"[Cache] No cached data found for company: {company_name}, type: {analysis_type}, metric: {analysis_metric}")
         return None
 
-    async def set(self, key: str, data: Dict, analysis_type: str = None) -> None:
-        """캐시 데이터 저장"""
+    async def set(self, company_name: str, data: Dict, analysis_type: str = None) -> None:
         try:
-            cached_data = await self.get(key) or self._create_empty_cache()
+            # 기존 데이터 조회 (전체 데이터)
+            existing_data = await self.get(company_name)
+            if not existing_data:
+                existing_data = self._create_empty_cache()
 
             # 분석 결과 업데이트
             if analysis_type:
-                self._update_analysis_data(cached_data, data, analysis_type)
+                if analysis_type in ['strength', 'weakness']:
+                    existing_data[analysis_type] = data[analysis_type]
+                elif analysis_type == 'insight':
+                    if 'strength' in data:
+                        existing_data['strength'] = data['strength']
+                    if 'weakness' in data:
+                        existing_data['weakness'] = data['weakness']
+                    existing_data['insight'] = data['insight']
 
             # 저장소 업데이트
             for storage in self.storages:
                 try:
-                    await storage.set(key, cached_data, analysis_type)
+                    await storage.set(company_name, existing_data, analysis_type)
                     logger.debug(
                         f"[Cache] Stored in {storage.__class__.__name__}")
                 except Exception as e:
                     logger.error(
                         f"[Cache] Error setting data in {storage.__class__.__name__}: {str(e)}")
 
-            # 단일 통합 로그 메시지
-            logger.info(
-                f"\n[Cache] Analysis completed - Key: {key} | "
-                f"Type: {analysis_type or 'N/A'} | "
-                f"Indicators: [S: {cached_data['strength']['indicator']}, "
-                f"W: {cached_data['weakness']['indicator']}, "
-                f"I: {cached_data['insight']['indicator']}]"
-            )
+            # 분석 유형별 로깅 메시지
+            if analysis_type == "strength":
+                logger.info(
+                    f"[Cache] Analysis completed - Company: {company_name} | "
+                    f"Type: strength | "
+                    f"Metric: {existing_data['strength']['analysis_metric']}"
+                )
+            elif analysis_type == "weakness":
+                logger.info(
+                    f"[Cache] Analysis completed - Company: {company_name} | "
+                    f"Type: weakness | "
+                    f"Metric: {existing_data['weakness']['analysis_metric']}"
+                )
+            elif analysis_type == "insight":
+                logger.info(
+                    f"[Cache] Analysis completed - Company: {company_name} | "
+                    f"Type: insight | "
+                    f"Metrics: [S: {existing_data['strength']['analysis_metric']}, "
+                    f"W: {existing_data['weakness']['analysis_metric']}, "
+                    f"I: {existing_data['insight']['analysis_metric']}]"
+                )
 
         except Exception as e:
             logger.error(f"[Cache] Failed to set cached data: {str(e)}")
@@ -144,17 +168,17 @@ class CacheManager:
         """빈 캐시 데이터 구조 생성"""
         return {
             'strength': {
-                'indicator': None,
+                'analysis_metric': None,
                 'detailed_result': None,
                 'summary': None
             },
             'weakness': {
-                'indicator': None,
+                'analysis_metric': None,
                 'detailed_result': None,
                 'summary': None
             },
             'insight': {
-                'indicator': None,
+                'analysis_metric': None,
                 'summary': None
             }
         }
