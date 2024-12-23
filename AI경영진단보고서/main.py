@@ -14,7 +14,7 @@ from core import (
     run_server,
     lifespan
 )
-from api.routes import analysis_router, query_router, health_router, feedback_router
+from api.routes import analysis_router, query_router, health_router, feedback_router, credit_router, credit_feedback_router, credit_query_router
 from utils.logger import get_logger
 
 # Logger 초기화
@@ -25,7 +25,7 @@ app = FastAPI(
     title="Business Analysis API",
     description="AI경영진단보고서 분석을 위한 API",
     version="1.0.0",
-    lifespan=lifespan  # Application 생명주기 관리
+    lifespan=lifespan  # Application 생명주기 관리x
 )
 
 # API 요청 제한 설정
@@ -40,6 +40,9 @@ app.include_router(health_router)    # 상태 체크 엔드포인트
 app.include_router(analysis_router)  # 분석 관련 엔드포인트
 app.include_router(query_router)     # 쿼리 관련 엔드포인트
 app.include_router(feedback_router)  # 피드백 관련 엔드포인트
+app.include_router(credit_router)    # 신용 분석 엔드포인트 추가
+app.include_router(credit_feedback_router)
+app.include_router(credit_query_router)
 
 # 전역 예외 처리 설정
 app.add_exception_handler(HTTPException, http_exception_handler)      # HTTP 예외

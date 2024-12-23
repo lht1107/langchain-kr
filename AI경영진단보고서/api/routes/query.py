@@ -12,7 +12,8 @@ from preprocessing import (
     preprocess_growth_data,
     preprocess_profitability_data,
     preprocess_partner_stability_data,
-    preprocess_financial_stability_data
+    preprocess_financial_stability_data,
+    preprocess_hr_data
 )
 from utils.logger import get_logger
 from core.config import settings
@@ -27,7 +28,8 @@ preprocess_functions = {
     'growth': preprocess_growth_data,
     'profitability': preprocess_profitability_data,
     'partner_stability': preprocess_partner_stability_data,
-    'financial_stability': preprocess_financial_stability_data
+    'financial_stability': preprocess_financial_stability_data,
+    'hr': preprocess_hr_data
 }
 
 

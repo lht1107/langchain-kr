@@ -5,11 +5,13 @@ from .base import BaseCache
 from .redis_cache import RedisCache
 from .sqlite_cache import SQLiteCache
 from .postgresql_cache import PostgreSQLCache
+from .sqlite_credit_cache import SQLiteCreditCache
 
 __all__ = ["generate_sql_query",
            "fetch_company_data",
            "BaseCache",
            "RedisCache",
            "SQLiteCache",
-           "PostgreSQLCache"
+           "PostgreSQLCache",
+           "SQLiteCreditCache"
            ]

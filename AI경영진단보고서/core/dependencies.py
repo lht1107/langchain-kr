@@ -80,6 +80,7 @@ class LLMClientFactory:
         """
         return ChatOpenAI(
             api_key=self.api_key,
+            base_url="https://api.openai.com/v1",
             model_name=config.model_name,
             temperature=config.temperature,
             max_tokens=config.max_tokens,
@@ -92,15 +93,16 @@ class LLMClientFactory:
 common_llm = None    # 일반 분석용
 summary_llm = None   # 요약 분석용
 insight_llm = None   # 통찰 분석용
+credit_llm = None   # 신용 분석용
 
 
 def get_llm_clients(
     factory: LLMClientFactory = Depends()
-) -> Tuple[ChatOpenAI, ChatOpenAI, ChatOpenAI]:
+) -> Tuple[ChatOpenAI, ChatOpenAI, ChatOpenAI, ChatOpenAI]:
     """LLM 클라이언트들을 생성하는 의존성 함수
 
     Returns:
-        Tuple[ChatOpenAI, ChatOpenAI, ChatOpenAI]: (일반 분석, 요약 분석, 통찰 분석) 클라이언트
+        Tuple[ChatOpenAI, ChatOpenAI, ChatOpenAI, ChatOpenAI]: (일반 분석, 요약 분석, 통찰 분석, 신용 분석) 클라이언트
     """
     # 일반 분석용 설정
     common_config = LLMConfig(
@@ -123,10 +125,17 @@ def get_llm_clients(
         max_tokens=500
     )
 
+    credit_config = LLMConfig(
+        model_name="gpt-4o-mini",
+        temperature=0,      # 창의적 출력
+        max_tokens=5000
+    )
+
     return (
         factory.create_client(common_config),
         factory.create_client(summary_config),
-        factory.create_client(insight_config)
+        factory.create_client(insight_config),
+        factory.create_client(credit_config)
     )
 
 
@@ -137,7 +146,7 @@ async def lifespan(app: FastAPI):
     애플리케이션 시작 시 필요한 리소스를 초기화하고,
     종료 시 리소스를 정리하는 컨텍스트 매니저
     """
-    global common_llm, summary_llm, insight_llm
+    global common_llm, summary_llm, insight_llm, credit_llm
 
     # LLM 팩토리 초기화 및 의존성 등록
     llm_factory = LLMClientFactory(settings.OPENAI_API_KEY)
@@ -147,7 +156,8 @@ async def lifespan(app: FastAPI):
         logger.info("Starting application initialization for LLM use")
 
         # LLM 클라이언트 초기화
-        common_llm, summary_llm, insight_llm = get_llm_clients(llm_factory)
+        common_llm, summary_llm, insight_llm, credit_llm = get_llm_clients(
+            llm_factory)
 
         logger.info("Completed initialization successfully for LLM use")
         yield

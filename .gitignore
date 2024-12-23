@@ -18,6 +18,9 @@
 *.toml
 *.lock
 *.whl
+*.zip
+poetry.lock
+pyproject.toml
 
 # 폴더
 */cache/*
@@ -28,6 +31,7 @@
 */unuse/*
 working/
 */poetry_packages
+*/data/*
 
 ### JupyterNotebooks ###
 # gitignore template for Jupyter Notebooks

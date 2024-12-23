@@ -14,8 +14,7 @@ class PostgreSQLCache(BaseCache):
     """PostgreSQL 기반 캐시 구현"""
 
     def __init__(self):
-        self._pool = None
-        self.settings = settings
+        self._pool: Optional[asyncpg.pool.Pool] = None
 
     @retry(
         stop=stop_after_attempt(3),
@@ -25,10 +24,10 @@ class PostgreSQLCache(BaseCache):
             f"[PostgreSQL] Connection retry attempt {retry_state.attempt_number}"
         )
     )
-    async def _get_pool(self) -> asyncpg.Pool:
+    async def _get_pool(self) -> asyncpg.pool.Pool:
         if not self._pool:
             self._pool = await asyncpg.create_pool(
-                self.settings.CONNECTION_STRING,
+                dsn=settings.POSTGRESQL_CONNECTION_STRING,
                 min_size=5,
                 max_size=20
             )
@@ -41,10 +40,11 @@ class PostgreSQLCache(BaseCache):
         async with pool.acquire() as conn:
             # 분석 결과 테이블
             await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS {settings.SQLITE_TABLE_NAME} (
-                    cache_key TEXT,                
-                    analysis_type TEXT,            
-                    indicator TEXT,                
+                CREATE TABLE IF NOT EXISTS {settings.POSTGRESQL_TABLE_NAME} (
+                    id SERIAL PRIMARY KEY,
+                    company_name TEXT NOT NULL,
+                    analysis_type TEXT NOT NULL,
+                    analysis_metric TEXT NOT NULL,
                     detailed_result TEXT,
                     summary TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -53,87 +53,112 @@ class PostgreSQLCache(BaseCache):
 
             # 피드백 테이블
             await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS {settings.SQLITE_FEEDBACK_NAME} (
+                CREATE TABLE IF NOT EXISTS {settings.POSTGRESQL_FEEDBACK_NAME} (
                     id SERIAL PRIMARY KEY,
-                    cache_key TEXT NOT NULL,
+                    company_name TEXT NOT NULL,
                     feedback_type TEXT NOT NULL,
                     analysis_type TEXT NOT NULL,
+                    analysis_metric TEXT NOT NULL,
                     feedback_text TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
-            # 캐시 키 인덱스
+            # 인덱스 생성 (존재하지 않을 경우에만)
             await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_cache_lookup 
-                ON {settings.SQLITE_TABLE_NAME}
-                (cache_key, analysis_type, indicator, created_at)
-                WHERE cache_key IS NOT NULL
+                CREATE INDEX IF NOT EXISTS idx_analysis_lookup 
+                ON {settings.POSTGRESQL_TABLE_NAME} 
+                (company_name, created_at DESC, analysis_type, analysis_metric)
             """)
 
-    async def get(self, key: str, analysis_type: str = None, indicator: str = None) -> Optional[Dict]:
-        """캐시 데이터 조회"""
+    async def get(
+        self,
+        company_name: str,
+        analysis_type: Optional[str] = None,
+        analysis_metric: Optional[str] = None
+    ) -> Optional[Dict]:
+        """캐시에서 데이터 조회"""
+
         try:
             today = datetime.now()
-            company_name = key.split(':')[0]
             current_month = f"{today.year}-{today.month:02d}"
+            prev_month = f"{today.year}-{today.month-1:02d}" if today.month > 1 else f"{today.year-1}-12"
+
+            result = {
+                'strength': {'analysis_metric': None, 'detailed_result': None, 'summary': None},
+                'weakness': {'analysis_metric': None, 'detailed_result': None, 'summary': None},
+                'insight': {'analysis_metric': None, 'summary': None}
+            }
 
             pool = await self._get_pool()
             async with pool.acquire() as conn:
-                # 기본 쿼리 구성
-                base_query = f"""
-                    SELECT analysis_type, indicator, detailed_result, summary
-                    FROM {settings.SQLITE_TABLE_NAME}
-                    WHERE cache_key LIKE $1
-                """
-                params = [f"{company_name}:{current_month}-%"]
-                param_count = 1
-
-                # THRESHOLD 이후인 경우
                 if today.day >= settings.THRESHOLD:
-                    param_count += 1
-                    base_query += f" AND EXTRACT(DAY FROM created_at) >= ${param_count}"
-                    params.append(settings.THRESHOLD)
+                    base_query = f"""
+                        SELECT analysis_type, analysis_metric, detailed_result, summary
+                        FROM {settings.POSTGRESQL_TABLE_NAME}
+                        WHERE company_name = $1 
+                        AND TO_CHAR(created_at, 'YYYY-MM') = $2
+                        AND EXTRACT(DAY FROM created_at) >= $3
+                    """
+                    params = [company_name, current_month, settings.THRESHOLD]
+                else:
+                    base_query = f"""
+                        SELECT analysis_type, analysis_metric, detailed_result, summary
+                        FROM {settings.POSTGRESQL_TABLE_NAME}
+                        WHERE company_name = $1 AND (
+                            TO_CHAR(created_at, 'YYYY-MM') = $2 OR
+                            (TO_CHAR(created_at, 'YYYY-MM') = $3 AND EXTRACT(DAY FROM created_at) >= $4)
+                        )
+                    """
+                    params = [company_name, current_month,
+                              prev_month, settings.THRESHOLD]
 
-                # 특정 분석 유형과 지표가 지정된 경우
-                if analysis_type and indicator:
-                    param_count += 2
-                    base_query += f" AND analysis_type = ${param_count-1} AND indicator = ${param_count}"
-                    params.extend([analysis_type, indicator])
+                if analysis_type == 'insight' and analysis_metric:
+                    strength_metric, weakness_metric = analysis_metric.split(
+                        '/')
+                    base_query += """ 
+                        AND (
+                            (analysis_type = 'strength' AND analysis_metric = $5) OR
+                            (analysis_type = 'weakness' AND analysis_metric = $6) OR
+                            (analysis_type = 'insight' AND analysis_metric = $7)
+                        )
+                    """
+                    params.extend(
+                        [strength_metric, weakness_metric, analysis_metric])
+                elif analysis_type and analysis_metric:
+                    base_query += " AND analysis_type = $5 AND analysis_metric = $6"
+                    params.extend([analysis_type, analysis_metric])
 
-                base_query += " ORDER BY created_at DESC LIMIT 1"
+                base_query += " ORDER BY created_at DESC"
 
-                row = await conn.fetchrow(base_query, *params)
+                rows = await conn.fetch(base_query, *params)
 
-                if not row:
+                if not rows:
                     return None
 
-                result = {
-                    'strength': {'indicator': None, 'detailed_result': None, 'summary': None},
-                    'weakness': {'indicator': None, 'detailed_result': None, 'summary': None},
-                    'insight': {'indicator': None, 'summary': None}
-                }
-
-                analysis_type = row['analysis_type']
-                if analysis_type in ['strength', 'weakness']:
-                    result[analysis_type] = {
-                        'indicator': row['indicator'],
-                        'detailed_result': row['detailed_result'],
-                        'summary': row['summary']
-                    }
-                elif analysis_type == 'insight':
-                    result['insight'] = {
-                        'indicator': row['indicator'],
-                        'summary': row['summary']
-                    }
+                for row in rows:
+                    analysis_type_row, metric, detailed, summary = row['analysis_type'], row[
+                        'analysis_metric'], row['detailed_result'], row['summary']
+                    if analysis_type_row in ['strength', 'weakness']:
+                        result[analysis_type_row] = {
+                            'analysis_metric': metric,
+                            'detailed_result': detailed,
+                            'summary': summary
+                        }
+                    elif analysis_type_row == 'insight':
+                        result['insight'] = {
+                            'analysis_metric': metric,
+                            'summary': summary
+                        }
 
                 return result
 
         except Exception as e:
-            logger.error(f"[PostgreSQL] Get error for key {key}: {str(e)}")
+            logger.error(
+                f"[PostgreSQL] Get error for company {company_name}: {str(e)}")
             return None
 
-    async def set(self, key: str, value: Dict, analysis_type: str) -> None:
+    async def set(self, company_name: str, value: Dict, analysis_type: str) -> None:
         """캐시 데이터 저장"""
         try:
             pool = await self._get_pool()
@@ -141,33 +166,55 @@ class PostgreSQLCache(BaseCache):
                 async with conn.transaction():
                     if analysis_type in ['strength', 'weakness']:
                         await conn.execute(
-                            f"""INSERT INTO {settings.SQLITE_TABLE_NAME}
-                            (cache_key, analysis_type, indicator, detailed_result, summary)
+                            f"""INSERT INTO {settings.POSTGRESQL_TABLE_NAME}
+                            (company_name, analysis_type, analysis_metric, detailed_result, summary)
                             VALUES ($1, $2, $3, $4, $5)""",
-                            key,
+                            company_name,
                             analysis_type,
-                            value[analysis_type]['indicator'],
+                            value[analysis_type]['analysis_metric'],
                             value[analysis_type]['detailed_result'],
                             value[analysis_type]['summary']
                         )
                     elif analysis_type == 'insight':
                         await conn.execute(
-                            f"""INSERT INTO {settings.SQLITE_TABLE_NAME}
-                            (cache_key, analysis_type, indicator, summary)
+                            f"""INSERT INTO {settings.POSTGRESQL_TABLE_NAME}
+                            (company_name, analysis_type, analysis_metric, summary)
                             VALUES ($1, $2, $3, $4)""",
-                            key,
+                            company_name,
                             analysis_type,
-                            value['insight']['indicator'],
+                            value['insight']['analysis_metric'],
                             value['insight']['summary']
                         )
 
                     logger.debug(
-                        f"[PostgreSQL] Successfully stored {analysis_type} data for key: {key}")
+                        f"[PostgreSQL] Successfully stored {analysis_type} data for company: {company_name}"
+                    )
 
         except Exception as e:
-            logger.error(f"[PostgreSQL] Set error for key {key}: {str(e)}")
+            logger.error(
+                f"[PostgreSQL] Set error for company {company_name}: {str(e)}")
+            raise
 
-    async def close(self):
+    def _create_empty_cache(self) -> Dict:
+        """빈 캐시 데이터 구조 생성"""
+        return {
+            'strength': {
+                'analysis_metric': None,
+                'detailed_result': None,
+                'summary': None
+            },
+            'weakness': {
+                'analysis_metric': None,
+                'detailed_result': None,
+                'summary': None
+            },
+            'insight': {
+                'analysis_metric': None,
+                'summary': None
+            }
+        }
+
+    async def close(self) -> None:
         """커넥션 풀 종료"""
         if self._pool:
             await self._pool.close()

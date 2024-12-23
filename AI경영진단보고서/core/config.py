@@ -17,11 +17,13 @@ class Settings(BaseSettings):
 
     # 캐시 설정
     CACHE_TYPE: str = "sqlite"  # 'redis', 'sqlite', 'postgresql', 'all'
+    CACHE_CREDIT_TYPE: str = 'sqlite'
 
     # 프롬프트 폴더 지정
     BASE_DIR: ClassVar[str] = os.path.dirname(
         os.path.dirname(os.path.abspath(__file__)))  # 모든 instance가 공유
     PROMPTS_DIR: ClassVar[str] = os.path.join(BASE_DIR, "prompts")
+    DATA_PATH: ClassVar[str] = os.path.join(BASE_DIR, 'data')
 
     # 로그 파일 경로 설정
     LOG_DIR: ClassVar[str] = os.path.join(BASE_DIR, 'logs')
@@ -32,6 +34,12 @@ class Settings(BaseSettings):
     SQLITE_TABLE_NAME: ClassVar[str] = "AI_COMMENTS"
     SQLITE_FEEDBACK_NAME: ClassVar[str] = 'USER_FEEDBACK'
     SQLITE_CACHE_INDEX: ClassVar[str] = 'idx_cache_index'
+
+    SQLITE_CREDIT_DB_PATH: str = os.path.join(
+        BASE_DIR, 'database', 'sqlite_credit_cache.db')
+    SQLITE_CREDIT_CACHE_INDEX: ClassVar[str] = 'idx_cache_index'
+    SQLITE_CREDIT_TABLE_NAME: ClassVar[str] = "CREDIT_CONSULTING"
+    SQLITE_CREDIT_FEEDBACK_NAME: ClassVar[str] = 'USER_FEEDBACK'
 
     # PostgreSQL 설정
     DB_USERNAME: str = os.getenv("DB_USERNAME")
@@ -54,7 +62,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")
 
     METRICS: ClassVar[List[str]] = ['growth', 'profitability',
-                                    'partner_stability', 'financial_stability']
+                                    'partner_stability', 'financial_stability', 'hr']
 
     REQUIRED_TAGS: ClassVar[Dict[str, List[str]]] = {
         "growth": [
@@ -84,6 +92,15 @@ class Settings(BaseSettings):
             "{annual_liquidity}",
             "{monthly_borrowings}",
             "{monthly_liquidity}"
+        ],
+        "hr": [
+            '{monthly_employee_metrics}',
+            '{annual_employee_metrics}',
+            '{tenure_distribution}',
+            '{age_distribution}',
+            '{average_tenure_by_age}',
+            '{average_salary_by_age}',
+            '{monthly_salary_and_revenue_metrics}'
         ]
     }
 
@@ -107,7 +124,8 @@ class Settings(BaseSettings):
         "database",
         "preprocessing",
         "utils",
-        "core"
+        "core",
+        "api"
     ]
 
     @property

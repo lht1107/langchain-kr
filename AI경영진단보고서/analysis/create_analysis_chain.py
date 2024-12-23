@@ -13,7 +13,8 @@ from preprocessing import (
     preprocess_growth_data,
     preprocess_profitability_data,
     preprocess_partner_stability_data,
-    preprocess_financial_stability_data
+    preprocess_financial_stability_data,
+    preprocess_hr_data
 )
 from core.config import settings
 
@@ -219,7 +220,8 @@ def get_preprocess_and_keys(analysis_metric: str) -> Tuple[callable, list]:
         'growth': preprocess_growth_data,
         'profitability': preprocess_profitability_data,
         'partner_stability': preprocess_partner_stability_data,
-        'financial_stability': preprocess_financial_stability_data
+        'financial_stability': preprocess_financial_stability_data,
+        'hr': preprocess_hr_data
     }
 
     if analysis_metric not in settings.REQUIRED_TAGS:

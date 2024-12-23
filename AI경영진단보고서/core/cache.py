@@ -22,6 +22,7 @@ class CacheManager:
     def __init__(self):
         """캐시 매니저 초기화"""
         self.storages: List[BaseCache] = []
+        self.credit_storages: List[BaseCache] = []
         self._initialize_storages()
 
     def _initialize_storages(self) -> None:
@@ -44,6 +45,12 @@ class CacheManager:
                 from database.postgresql_cache import PostgreSQLCache
                 self.storages.append(PostgreSQLCache())
                 logger.info("[Cache] PostgreSQL storage initialized")
+
+            if settings.CACHE_CREDIT_TYPE in ['sqlite', 'all']:
+                from database.sqlite_credit_cache import SQLiteCreditCache
+                self.credit_storages.append(SQLiteCreditCache())
+                logger.info(
+                    "[Cache] SQLiteCreditCache storage initialized for credit analysis")
 
             if not self.storages:
                 logger.warning(

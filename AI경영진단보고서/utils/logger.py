@@ -1,4 +1,12 @@
 import os
+import sys
+import logging
+from core.config import settings
+
+# 로깅 설정을 위한 초기화 함수
+
+
+import os
 import logging
 from core.config import settings
 

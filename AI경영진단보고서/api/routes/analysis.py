@@ -77,7 +77,7 @@ async def analyze_company(
     weakness_metric: Optional[str] = None,  # 사용자 약점 지정
     cache: CacheManager = Depends(get_cache),
     llm_clients: Tuple[ChatOpenAI, ChatOpenAI,
-                       ChatOpenAI] = Depends(get_llm_clients)
+                       ChatOpenAI, ChatOpenAI] = Depends(get_llm_clients)
 ) -> StreamingResponse:  # streaming이 필요 없으면 "-> Dict" 로 변환
     """기업 분석을 수행하고 스트리밍 응답을 반환하는 End Point"""
 
@@ -89,7 +89,7 @@ async def analyze_company(
     df_company_info = pd.read_parquet(sample_data_path)
 
     # llm 초기화
-    common_llm, summary_llm, insight_llm = llm_clients
+    common_llm, summary_llm, insight_llm, _ = llm_clients
 
     # streaming이 필요 없으면 "Dict"로 변환
     async def generate_analysis() -> AsyncIterator[str]:

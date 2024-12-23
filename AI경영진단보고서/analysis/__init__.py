@@ -17,6 +17,7 @@ from .determine_strength_weakness import determine_strength_weakness
 from .create_summary_chain import create_summary_chain
 from .merge_analysis_results import merge_analysis_results
 from .create_analysis_chain import create_analysis_chain
+from .credit_analyzer import ShapAnalyzer
 
 
 class AnalysisChainError(Exception):
@@ -35,4 +36,4 @@ class PreprocessingError(AnalysisChainError):
 
 
 __all__ = ["determine_strength_weakness", "create_analysis_chain",
-           "merge_analysis_results", "create_summary_chain"]
+           "merge_analysis_results", "create_summary_chain", "ShapAnalyzer"]

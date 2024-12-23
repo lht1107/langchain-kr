@@ -57,15 +57,26 @@ metrics_mapping = {
         'title': '💰 재무 안정성',
         'annual': ['annual_borrowings', 'annual_liquidity'],
         'monthly': ['monthly_borrowings', 'monthly_liquidity']
+    },
+    'hr': {
+        'title': '👥 인적 관리',
+        'annual': ['annual_employee_metrics', 'average_tenure_by_age', 'average_salary_by_age', 'tenure_distribution', 'age_distribution'],
+        'monthly': ['monthly_employee_metrics', 'monthly_salary_and_revenue_metrics'],
     }
 }
 
 
-def process_dataframe(metrics_data, metric):
+def process_dataframe(metrics_data: Dict, metric: str) -> pd.DataFrame:
+    """
+    데이터를 데이터프레임으로 변환하고 NaN을 "-"로 변환.
+    이미 데이터프레임인 경우 그대로 반환.
+    """
+    if isinstance(metrics_data[metric], pd.DataFrame):
+        return metrics_data[metric]  # 이미 데이터프레임인 경우 그대로 반환
+
+    # JSON 데이터인 경우 데이터프레임으로 변환
     df = pd.DataFrame(metrics_data[metric])
-    # NaN 값을 "-"로 변환
-    df = df.fillna("-")
-    return df
+    return df.fillna("-")  # NaN 값을 "-"로 변환
 
 
 def submit_feedback(company_name: str, feedback_type: str, feedback_text: str,
