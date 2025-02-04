@@ -1,7 +1,5 @@
-import sqlite3
 from typing import Dict, Optional
 from datetime import datetime
-import aiosqlite
 
 from core.config import settings
 from database.base import BaseCache
@@ -30,13 +28,16 @@ class SQLiteCreditCache(BaseCache):
         # Validate table names
         if not all([self.table_name, self.feedback_table_name, self.index_name]):
             raise ValueError("Table names and index name cannot be empty")
-
+        import sqlite3
+        import aiosqlite
+        self.sqlite3 = sqlite3
+        self.aiosqlite = aiosqlite
         self._init_db()
 
     def _init_db(self):
         """Initialize credit consulting cache and feedback tables."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.sqlite3.connect(self.db_path) as conn:
                 # Create main credit consulting table
                 conn.execute(f"""
                     CREATE TABLE IF NOT EXISTS {self.table_name} (
@@ -69,7 +70,7 @@ class SQLiteCreditCache(BaseCache):
                 """)
                 conn.commit()
 
-        except sqlite3.OperationalError as e:
+        except self.sqlite3.OperationalError as e:
             if "already exists" not in str(e):
                 logger.error(
                     f"[SQLiteCreditCache] Database initialization failed: {str(e)}")
@@ -99,7 +100,7 @@ class SQLiteCreditCache(BaseCache):
                 'final_report': None
             }
 
-            async with aiosqlite.connect(self.db_path) as conn:
+            async with self.aiosqlite.connect(self.db_path) as conn:
                 base_query = f"""
                     SELECT analysis_type, detailed_analysis, final_report
                     FROM {self.table_name}
@@ -146,7 +147,7 @@ class SQLiteCreditCache(BaseCache):
             raise ValueError(f"Missing required fields: {required_fields}")
 
         try:
-            async with aiosqlite.connect(self.db_path) as conn:
+            async with self.aiosqlite.connect(self.db_path) as conn:
                 await conn.execute("BEGIN TRANSACTION")
                 try:
                     await conn.execute(

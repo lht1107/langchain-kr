@@ -1,9 +1,5 @@
-import sqlite3
-import json
 from typing import Dict, Optional
 from datetime import datetime
-
-import aiosqlite
 
 from core.config import settings
 from database.base import BaseCache
@@ -25,12 +21,15 @@ class SQLiteCache(BaseCache):
         self.feedback_table_name = feedback_table_name or settings.FEEDBACK_NAME  # 피드백 테이블 이름
         self.index_name = index_name or settings.CACHE_INDEX  # 분석 결과 인덱스 이름
         self.feedback_index_name = feedback_index_name or settings.FEEDBACK_CACHE_INDEX  # 피드백 인덱스 이름
-
+        import sqlite3
+        import aiosqlite
+        self.sqlite3 = sqlite3
+        self.aiosqlite = aiosqlite
         self._init_db()
 
     def _init_db(self):
         """Initialize the cache and feedback tables if they do not exist."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self.sqlite3.connect(self.db_path) as conn:
             # Analysis results table
             conn.execute(f"""
                 CREATE TABLE IF NOT EXISTS {self.table_name} (
@@ -74,7 +73,7 @@ class SQLiteCache(BaseCache):
                     ON {self.feedback_table_name} 
                     (nm_comp, at_created DESC, type_analy, type_analy_metric)
                 """)
-            except sqlite3.OperationalError as e:
+            except self.sqlite3.OperationalError as e:
                 if "already exists" not in str(e):
                     raise e
 
@@ -86,7 +85,7 @@ class SQLiteCache(BaseCache):
 
             result = self._create_empty_cache()
 
-            async with aiosqlite.connect(self.db_path) as conn:
+            async with self.aiosqlite.connect(self.db_path) as conn:
                 # 날짜 조건 설정
                 if today.day >= settings.THRESHOLD:
                     base_query = f"""
@@ -162,7 +161,7 @@ class SQLiteCache(BaseCache):
             analysis_type (str): Type of analysis (stored as type_analy).
         """
         try:
-            async with aiosqlite.connect(self.db_path) as conn:
+            async with self.aiosqlite.connect(self.db_path) as conn:
                 await conn.execute("BEGIN TRANSACTION")
                 try:
                     if analysis_type in ['strength', 'weakness']:

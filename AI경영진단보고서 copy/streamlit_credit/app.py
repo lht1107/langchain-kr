@@ -168,7 +168,8 @@ def render_current_analysis(current_analysis):
     st.plotly_chart(fig_gauge, use_container_width=True)
 
     # 부도 확률 및 신용등급 정보
-    st.info(f"당사의 부도확률은 {proba}%이고, 신용등급은 {grade}에 해당합니다.")
+    # st.info(f"당사의 부도확률은 {proba}%이고, 신용등급은 {grade}에 해당합니다.")
+    st.info(f"당사의 신용등급은 {grade}에 해당합니다.")
 
     st.divider()
 
@@ -308,7 +309,7 @@ def get_cached_analysis(company_index: str, analysis_type: str):
         return None
 
 
-@st.cache_data
+# @st.cache_data
 def sample_generate():
     # 데이터 로드 및 전처리
     X_test = pd.read_pickle(os.path.join(settings.DATA_PATH, 'X_test.pkl'))
@@ -346,7 +347,7 @@ def generate_sample_data(X_test, y_test, probas):
         'index': true_negative_indices,
         'actual': y_test[true_negative_indices],
         'predicted_proba': probas[true_negative_mask]
-    }).sort_values('predicted_proba', ascending=False).sample(n=5, random_state=40)
+    }).sort_values('predicted_proba', ascending=False).sample(n=5, random_state=9)
 
     return result_df, result_df_0
 
@@ -674,33 +675,33 @@ def main():
             # else:
             #     st.info("No additional analysis available for non-hypothetical type.")
 
-            # # credit_query API 호출
-            # try:
-            #     analysis_type = st.session_state.analysis_type
-            #     payload = {
-            #         "company_index": st.session_state.company_index,
-            #         "analysis_type": analysis_type
-            #     }
+            # credit_query API 호출
+            try:
+                analysis_type = st.session_state.analysis_type
+                payload = {
+                    "company_index": st.session_state.company_index,
+                    "analysis_type": analysis_type
+                }
 
-            #     response = requests.post(
-            #         f"http://127.0.0.1:8000/credit_query/",
-            #         json=payload
-            #     )
-            #     response.raise_for_status()
-            #     query_result = response.json()
+                response = requests.post(
+                    f"http://127.0.0.1:8000/credit_query/",
+                    json=payload
+                )
+                response.raise_for_status()
+                query_result = response.json()
 
-            #     if analysis_type == "current":
-            #         st.write("### Current Analysis")
-            #         st.json(query_result.get("current_analysis", {}))
-            #     elif analysis_type == "hypothetical":
-            #         st.write("### Hypothetical Analysis")
-            #         st.json(query_result.get("hypothetical_analysis", {}))
+                if analysis_type == "current":
+                    st.write("### Current Analysis")
+                    st.json(query_result.get("current_analysis", {}))
+                elif analysis_type == "hypothetical":
+                    st.write("### Hypothetical Analysis")
+                    st.json(query_result.get("hypothetical_analysis", {}))
 
-            # except requests.exceptions.HTTPError as e:
-            #     st.error(
-            #         f"credit_query 서버 오류: {e.response.status_code} - {e.response.reason}")
-            # except requests.exceptions.RequestException as e:
-            #     st.error(f"credit_query 요청 처리 중 오류 발생: {str(e)}")
+            except requests.exceptions.HTTPError as e:
+                st.error(
+                    f"credit_query 서버 오류: {e.response.status_code} - {e.response.reason}")
+            except requests.exceptions.RequestException as e:
+                st.error(f"credit_query 요청 처리 중 오류 발생: {str(e)}")
 
 
 if __name__ == "__main__":
