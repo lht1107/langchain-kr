@@ -11,25 +11,25 @@ package-mode = false
 python = ">=3.11,<3.12"
 
 # 언어 및 자연어 처리 관련 패키지
-langchain = "^0.3"
-langchain-core = "^0.3"
-langchain-experimental = "^0.3"
-langchain-community = "^0.3"
-langchain-openai = "^0.2"
-langchain-anthropic = "^0.2"
-langchain-text-splitters = "^0.3"
-langchain-elasticsearch = "^0.3"
-langchain-upstage = "^0.3"
+langchain = "^0.3"  # 버전 업데이트
+langchain-core = "^0.3"  # 추가 패키지
+langchain-experimental = "^0.3"  # 버전 업데이트
+langchain-community = "^0.3"  # 버전 업데이트
+langchain-openai = "^0.2"  # 버전 업데이트
+langchain-anthropic = "^0.2"  # 버전 업데이트
+langchain-text-splitters = "^0.3"  # 버전 업데이트
+langchain-elasticsearch = "^0.3"  # 버전 업데이트
+langchain-upstage = "^0.3"  # 버전 업데이트
 langchain-chroma = "^0.1"
-langchain-cohere = "^0.3"
+langchain-cohere = "^0.3"  # 버전 업데이트
 langchain-milvus = "^0.1.1"
-langchain-google-genai = "^2.0"
-langchain-huggingface = "^0"
-langchain-teddynote = "^0.3.37"
+langchain-google-genai = "^2.0"  # 버전 업데이트
+langchain-huggingface = "^0"  # 버전 업데이트
+langchain-teddynote = "^0.3.37"  # 버전 업데이트
 langchainhub = "^0.1.15"
 langgraph = "^0"
 langsmith = "^0.1"
-huggingface-hub = "^0.25"
+huggingface-hub = "^0.25"  # 버전 업데이트
 openai = "^1.34"
 deepl = "^1.17.0"
 kiwipiepy = "^0.17.1"
@@ -87,11 +87,32 @@ rapidocr-onnxruntime = "^1.3.24"
 seaborn = "^0.13.2"
 grandalf = "^0.8"
 rouge-score = "^0.1.2"
+
+# 다른 사람의 pyproject.toml에서 추가된 패키지
 langchain-ollama = "^0.2.0"
 mypy = "^1.11.2"
 pinecone = "^5.3.1"
 wikipedia = "^1.4.0"
 scikit-learn = "^1.5.2"
+
+# 기존 고유 패키지 유지
+psycopg2 = "^2.9.9"  # 오타 수정
+datatables = "^0.4.9"
+plotly = "^5.24.1"
+tabulate = "^0.9.0"
+black = "^24.10.0"
+aioredis = "^2.0.1"
+slowapi = "^0.1.9"
+gunicorn = "^23.0.0"
+pydantic-settings = "^2.6.1"
+asyncpg = "^0.30.0"
+aiosqlite = "^0.20.0"
+reportlab = "^4.2.5"
+ngrok = "^1.4.0"
+shap = "^0.46.0"
+xgboost = "^2.1.3"
+pyngrok = "^7.2.2"
+colorlog = "^6.9.0"
 
 [build-system]
 requires = ["poetry-core"]
